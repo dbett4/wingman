@@ -45,6 +45,7 @@ if [ ! -f .env ]; then
 
 WORKIVA_CLIENT_ID=
 WORKIVA_CLIENT_SECRET=
+WINGMAN_TOKEN=
 
 # Optional:
 # WORKIVA_REGION=us
@@ -57,6 +58,13 @@ ENVEOF
   ok "created .env — edit it and add your Workiva creds"
 else
   ok ".env already exists"
+fi
+
+if python3 scripts/configure_local.py; then
+  ok "generated/preserved a per-install token and synchronized extension/local-config.js"
+else
+  warn "local token setup failed — guarded endpoints will remain disabled"
+  exit 1
 fi
 
 say "5. Workiva credentials"

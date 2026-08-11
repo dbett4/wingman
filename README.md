@@ -1,5 +1,10 @@
 # Wingman
 
+> **Provenance.** This is a sanitized public extract published in August 2026;
+> its public Git dates are publication dates rather than the original private
+> development timeline. The City of Riverton data is fictional. No client data
+> or credentials are included.
+
 Wingman is a Chrome extension and local Python service for reviewing financial
 reporting workbooks in Workiva. It finds problems that disappear in an export, such
 as broken links, formula hardcodes, formatting drift, and years displayed as `2,025`.
@@ -7,7 +12,9 @@ For the small set of changes it can check and undo, it can also apply the fix.
 
 ![Tests](https://github.com/dbett4/wingman/actions/workflows/test.yml/badge.svg)
 
-CI runs 472 Python tests and 243 extension tests on Python 3.11 and 3.12.
+Current clean-run result: 462 Python tests pass, 13 integration-dependent tests
+skip (475 collected), and 243 extension tests pass. CI runs the same Python and
+extension commands on Python 3.11 and 3.12.
 
 ## Current demo
 
@@ -67,7 +74,7 @@ write-path choices, including rejected approaches and measured false positives.
 ```bash
 git clone https://github.com/dbett4/wingman.git
 cd wingman
-./setup.sh                 # checks Python, creates .env, runs a smoke test
+./setup.sh                 # creates a per-install token + .env, then runs smoke checks
 # add your Workiva OAuth client credentials to .env
 ./run-service.sh           # starts the service on 127.0.0.1:8770
 ```
@@ -77,11 +84,19 @@ spreadsheet, and click the Wingman toolbar icon. Without credentials, you can st
 start the detector self-test with `python3 server/detectors.py`. The full service
 launcher exits early if credentials are missing.
 
+`./setup.sh` writes the same generated local token to the gitignored `.env` and
+`extension/local-config.js`. Guarded routes have no packaged fallback token and stay
+disabled if setup has not completed. Reload the unpacked extension after setup.
+
+`/api/checks` is an optional adapter for a separate `run_checks.py` installation.
+That external checks CLI is not included here; `/api/status` reports whether it is
+available, and the adapter returns an explicit unavailable result when it is absent.
+
 ## Test it
 
 ```bash
 pip install pytest
-python3 -m pytest server/          # 472 tests
+python3 -m pytest server/          # 462 pass, 13 skip (475 collected)
 node extension/content.test.js     # 243 tests
 scripts/smoke_check.sh             # route and write-gate smoke checks
 ```

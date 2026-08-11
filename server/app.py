@@ -50,7 +50,7 @@ import wingman_receipts
 import wk_client as wk
 
 PORT = int(os.environ.get("WINGMAN_PORT", "8770"))
-WINGMAN_TOKEN = os.environ.get("WINGMAN_TOKEN", "wm-local-1665dd6a")  # shared with the extension background worker
+WINGMAN_TOKEN = os.environ.get("WINGMAN_TOKEN", "").strip()
 # Allowlisted extension id(s). Set WINGMAN_EXT_ID to your unpacked/store extension ID
 # (chrome://extensions with Developer mode on shows the ID of a loaded unpacked build).
 ALLOWED_EXT_IDS = {
@@ -360,15 +360,15 @@ def _operator_config_status():
     This intentionally reports only present/missing/custom/default facts. It never
     returns tokens, extension IDs, or Workiva credential values.
     """
-    token_custom = bool(os.environ.get("WINGMAN_TOKEN"))
+    token_configured = bool(WINGMAN_TOKEN)
     ext_custom = bool(os.environ.get("WINGMAN_EXT_ID"))
     warnings = []
-    if not token_custom:
-        warnings.append("WINGMAN_TOKEN is using the local default; set a custom token before sharing this service beyond local loopback.")
+    if not token_configured:
+        warnings.append("WINGMAN_TOKEN is missing; guarded endpoints are disabled. Run ./setup.sh.")
     if not ext_custom:
         warnings.append("WINGMAN_EXT_ID is using the packaged default; verify it matches the installed extension before relying on origin-gated writes.")
     return {
-        "wingman_token": "custom" if token_custom else "default-local",
+        "wingman_token": "configured" if token_configured else "missing",
         "extension_origin": "custom" if ext_custom else "default-packaged",
         "allowed_extension_ids_count": len([x for x in ALLOWED_EXT_IDS if x]),
         "workiva_client_id": "present" if os.environ.get("WORKIVA_CLIENT_ID") else "missing",
@@ -392,7 +392,8 @@ def _wingman_status():
             "formula_fetch_mode": wk.formula_fetch_mode(),
             "formula_fetch_cap": wk.formula_fetch_cap(),
             "vision": True,
-            "checks": True,
+            "checks_adapter": True,
+            "external_checks_cli": checks_bridge.resolve_run_checks_script() is not None,
         },
     }
 
@@ -431,11 +432,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def _authorized(self):
         # The extension's background worker fetches with no Origin header, so origin-based CORS
-        # can't gate it — the shared token does. A web page cannot read the token, and a non-simple
-        # web request is preflight-rejected by do_OPTIONS (origin check). Token first, origin fallback.
-        if self.headers.get("X-Wingman-Token") == WINGMAN_TOKEN:
-            return True
-        return _origin_ok(self.headers.get("Origin"))
+        # can't gate it — the per-install token does. Origin checks remain an additional CORS
+        # boundary, never a substitute for the token on guarded endpoints.
+        return bool(
+            WINGMAN_TOKEN
+            and self.headers.get("X-Wingman-Token") == WINGMAN_TOKEN
+        )
 
     def _guard(self):
         if not self._authorized():

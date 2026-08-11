@@ -35,6 +35,8 @@ class ApiErrorPayloadTests(unittest.TestCase):
 class HandlerRouteTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.original_token = app.WINGMAN_TOKEN
+        app.WINGMAN_TOKEN = "wingman-test-token"
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), app.Handler)
         cls.base = f"http://127.0.0.1:{cls.server.server_address[1]}"
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
@@ -43,6 +45,7 @@ class HandlerRouteTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
+        app.WINGMAN_TOKEN = cls.original_token
 
     def _request(self, path, *, method="GET", token=None, body=None):
         headers = {}
@@ -84,11 +87,11 @@ class HandlerRouteTests(unittest.TestCase):
         for key in ("wingman_token", "extension_origin", "workiva_client_id", "workiva_client_secret"):
             self.assertIn(key, oc, f"operator_config missing field: {key}")
         values_text = str(list(oc.values()))
-        for forbidden in ("wm-local-1665dd6a", "Bearer "):
+        for forbidden in ("Bearer ",):
             self.assertNotIn(forbidden, values_text, f"operator_config must not expose credential values: {forbidden}")
         for field in ("workiva_client_id", "workiva_client_secret"):
             self.assertIn(oc.get(field), ("present", "missing"), f"{field} must be present/missing not a value")
-        self.assertIn(oc["wingman_token"], ("custom", "default-local"))
+        self.assertIn(oc["wingman_token"], ("configured", "missing"))
         self.assertIn(oc["extension_origin"], ("custom", "default-packaged"))
         self.assertIsInstance(oc.get("warnings"), list)
 
@@ -110,6 +113,16 @@ class HandlerRouteTests(unittest.TestCase):
 
     def test_queue_still_requires_token(self):
         code, payload = self._request("/api/queue?spreadsheetId=x", token=False)
+        self.assertEqual(code, 403)
+        self.assertIn("not authorized", payload.get("error", ""))
+
+    def test_guarded_route_rejects_when_service_token_missing(self):
+        original = app.WINGMAN_TOKEN
+        app.WINGMAN_TOKEN = ""
+        try:
+            code, payload = self._request("/api/queue?spreadsheetId=x")
+        finally:
+            app.WINGMAN_TOKEN = original
         self.assertEqual(code, 403)
         self.assertIn("not authorized", payload.get("error", ""))
 

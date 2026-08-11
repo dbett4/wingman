@@ -19,6 +19,13 @@ load_env() {
 }
 load_env "$HERE/.env"
 
+# No static fallback: authenticated routes stay disabled until setup creates a token.
+if [ -z "${WINGMAN_TOKEN:-}" ]; then
+  echo "Wingman: WINGMAN_TOKEN is not set." >&2
+  echo "  Run ./setup.sh to create the per-install service/extension token." >&2
+  exit 1
+fi
+
 # Fail fast with a clear message if creds are missing — otherwise every Workiva call 401s.
 if [ -z "${WORKIVA_CLIENT_ID:-}" ] || [ -z "${WORKIVA_CLIENT_SECRET:-}" ]; then
   echo "Wingman: WORKIVA_CLIENT_ID / WORKIVA_CLIENT_SECRET are not set." >&2

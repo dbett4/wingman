@@ -1,6 +1,7 @@
 # local secrets/config — holds Workiva creds, never commit. Created by ./setup.sh.
 .env
 .env.local
+extension/local-config.js
 
 # signing key — SECRET, never commit
 *.pem

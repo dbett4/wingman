@@ -1,12 +1,13 @@
 // MV3 service worker.
 importScripts("vision-capture.js");
+try { importScripts("local-config.js"); } catch (_err) { /* setup.sh creates it */ }
 //  (1) Toolbar click toggles the in-page Wingman panel (messages the content script).
 //  (2) API broker: the in-page panel asks the worker to call the local service, so the
 //      request carries the extension origin (a content-script fetch would carry the
 //      Workiva page origin instead).
 //  (3) Dev auto-reload: poll /version, reload the extension when the on-disk code changes.
 const SERVICE = "http://127.0.0.1:8770";
-const WM_TOKEN = "wm-local-1665dd6a";  // shared with the service; identifies the extension (not a real secret)
+const WM_TOKEN = String((globalThis.WINGMAN_LOCAL_CONFIG || {}).token || "").trim();
 
 chrome.runtime.onInstalled.addListener(() => console.log("[wingman] background installed"));
 
@@ -19,6 +20,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "WM_API") {
     (async () => {
       try {
+        if (!WM_TOKEN) {
+          sendResponse({ ok: false, configError: true, error: "Wingman local token missing; run ./setup.sh and reload the extension." });
+          return;
+        }
         const opts = Object.assign({}, msg.opts);
         opts.headers = Object.assign({}, opts.headers, { "X-Wingman-Token": WM_TOKEN });
         const r = await fetch(SERVICE + msg.path, opts);
@@ -254,6 +259,7 @@ async function gotoCell(tabId, rawAddr) {
 }
 
 async function devReloadCheck() {
+  if (!WM_TOKEN) return;
   let build;
   try {
     const r = await fetch(SERVICE + "/version", { headers: { "X-Wingman-Token": WM_TOKEN } });
