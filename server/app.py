@@ -138,6 +138,14 @@ def _route_path(raw_path):
 def _api_error_payload(exc):
     """Map upstream Workiva failures to panel-friendly messages (502 envelope)."""
     msg = repr(exc)
+    if "NO_CREDENTIALS" in msg:
+        return {
+            "error": (
+                "Workiva credentials missing — set WORKIVA_CLIENT_ID + WORKIVA_CLIENT_SECRET "
+                "in the service environment (or a .env in the working directory)"
+            ),
+            "detail": msg,
+        }
     if "HTTPError 404" in msg or "404: 'Not Found'" in msg:
         return {
             "error": (

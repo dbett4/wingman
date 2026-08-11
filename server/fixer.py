@@ -941,5 +941,8 @@ if __name__ == "__main__":
         raise SystemExit("usage: fixer.py <spreadsheetId> <sheetId> <tableId> <A1cell>")
     ss, sheet_id, table_id, addr = sys.argv[1:5]
     ctx = wk._ssl_context()
-    tok = wk.get_token(ctx)
+    try:
+        tok = wk.get_token(ctx)
+    except wk.AuthError as e:
+        raise SystemExit(str(e))  # clean one-line exit for CLI use; the service catches AuthError itself
     print(json.dumps(harness_test(ss, sheet_id, table_id, addr, tok, ctx), indent=2))

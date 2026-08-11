@@ -44,6 +44,16 @@ def _ssl_context():
         return ssl.create_default_context()
 
 
+class AuthError(RuntimeError):
+    """Workiva credentials missing or unusable.
+
+    An ordinary Exception on purpose: the service's route dispatch catches Exception and
+    returns a JSON error envelope. SystemExit (BaseException) would sail past that guard
+    and kill the handler thread before a response is written. CLI entry points convert
+    this to a clean SystemExit themselves.
+    """
+
+
 def _resolve_credentials():
     cid, sec = os.environ.get(CLIENT_ID_ENV, ""), os.environ.get(CLIENT_SECRET_ENV, "")
     if cid and sec:
@@ -66,7 +76,7 @@ def _resolve_credentials():
                 sec = sec or v
         if cid and sec:
             return cid, sec
-    raise SystemExit(f"NO_CREDENTIALS: set {CLIENT_ID_ENV} + {CLIENT_SECRET_ENV}")
+    raise AuthError(f"NO_CREDENTIALS: set {CLIENT_ID_ENV} + {CLIENT_SECRET_ENV}")
 
 
 def get_token(ctx=None):
@@ -647,7 +657,10 @@ if __name__ == "__main__":
         raise SystemExit("usage: wk_client.py <spreadsheetId> <sheetId> [--raw]")
     ss, sh = args[0], args[1]
     ctx = _ssl_context()
-    tok = get_token(ctx)
+    try:
+        tok = get_token(ctx)
+    except AuthError as e:
+        raise SystemExit(str(e))  # clean one-line exit for CLI use; the service catches AuthError itself
     raw = get_sheetdata(ss, sh, tok, ctx)
     if "--raw" in sys.argv:
         _summarize_raw(raw)
