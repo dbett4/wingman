@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "Wingman",
+  "version": "0.1.0",
+  "description": "Reads the active Workiva cell from the DOM and flags pixel defects the API can't see: contrast and blank linked cells.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Wingman for Workiva"
+  },
+  "permissions": [
+    "alarms",
+    "storage",
+    "debugger"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8770/*",
+    "http://localhost:8770/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://app.wdesk.com/*",
+        "https://*.wdesk.com/*",
+        "https://*.workiva.com/*"
+      ],
+      "js": [
+        "wingman-core.js",
+        "wingman-panel.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "icons/icon128.png"
+      ],
+      "matches": [
+        "https://*.wdesk.com/*",
+        "https://*.workiva.com/*"
+      ]
+    }
+  ]
+}

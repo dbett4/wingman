@@ -1,0 +1,29 @@
+# local secrets/config — holds Workiva creds, never commit. Created by ./setup.sh.
+.env
+.env.local
+
+# signing key — SECRET, never commit
+*.pem
+# build artifacts (regenerate via PACKAGING.md)
+*.crx
+*.zip
+# live capture / debug images (may contain client pixels)
+live_capture*.png
+# Wingman activity logs — runtime telemetry, may reflect client workbook structure.
+# Default lives at ~/.wingman/logs (outside the repo); these guard a repo-local override.
+.wingman/
+/logs/
+wingman-events-*.jsonl
+# scratch logo/render images at repo root only — root-anchored so
+# extension/icons/ and assets/ stay tracked. Loose images at root are scratch.
+/*.png
+/*.svg
+__pycache__/
+.pytest_cache/
+.lazyweb/
+
+# macOS
+.DS_Store
+
+# regenerable Web Store bundle — rebuild via extension/PACKAGING.md
+wingman-extension.zip

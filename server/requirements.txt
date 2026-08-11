@@ -1,0 +1,14 @@
+# Wingman service dependencies.
+#
+# The CORE service — active-cell pill, API sheet/workbook scan, and every safe fix
+# (contrast, label-hygiene, negative-parens, junk-decimal) — runs on the Python 3
+# standard library ALONE. You do NOT need to install anything to use Wingman.
+#
+# The packages below are ONLY for the opt-in VISION lane (pixel contrast/clipping
+# detection on cell screenshots; the panel "Vision" checkbox). Without them, vision
+# reports "unavailable" and everything else works normally.
+#
+#   python3 -m pip install -r server/requirements.txt
+#
+numpy>=1.24
+pillow>=10.0

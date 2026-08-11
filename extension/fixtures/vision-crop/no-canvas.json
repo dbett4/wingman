@@ -1,0 +1,5 @@
+{
+  "canvases": [],
+  "overlays": [],
+  "expect": { "ok": false, "reason": "no grid canvas" }
+}

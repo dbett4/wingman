@@ -1,0 +1,5 @@
+{
+  "canvases": [{ "left": 100, "top": 50, "width": 800, "height": 600 }],
+  "overlays": [{ "left": 200, "top": 120, "width": 90, "height": 24, "className": "cell-select" }],
+  "expect": { "ok": true, "method": "overlay" }
+}
