@@ -5,13 +5,13 @@
 
 ## Context
 
-The improvement backlog called out the **degenerate placeholder formula**: cells that look formula-driven but are only stubs such as `=1+1`, `=0`, or constant-only arithmetic. These are missed by numeric tieout when a compensating cell offsets them, and they survive roll-forward because reviewers see an equals sign and assume the row is governed.
+Some cells look formula-driven but contain only placeholders such as `=1+1`, `=0`, or other constant arithmetic. Numeric tie-outs can miss them when another cell offsets the error, and the leading equals sign makes them easy to overlook during review.
 
-The existing `hardcoded-constant-in-formula` detector already catches large embedded plugs (`=12345`, `=SUMIFS(...)+250000`). It intentionally does not catch tiny placeholder formulas because row-control cells often use `=1` / `=-1`, and broad constant detection would erode trust.
+The existing `hardcoded-constant-in-formula` detector catches large embedded plugs (`=12345`, `=SUMIFS(...)+250000`). It intentionally skips small constants because row-control cells often use `=1` or `=-1`.
 
 ## Decision
 
-Add `degenerate-placeholder-formula` to `server/formula_hygiene.py` as a surfaced-only detector:
+Add `degenerate-placeholder-formula` to `server/formula_hygiene.py` as a review-only detector:
 
 - fires on `=0`, `=0.00`, and small constant-only arithmetic (`=1+1`, `=100-100`, `=(2+2)*0`);
 - skips bare `=1` / `=-1` row-control shapes;
@@ -34,6 +34,6 @@ No auto-fix is provided. The correct replacement depends on the statement archit
 - `python3 server/formula_hygiene.py` → 86/86 passed.
 - `python3 -m pytest server/test_formula_hygiene.py server/test_diagnose.py -q` → 123 passed.
 
-## Safety boundary
+## Scope
 
-Read-only / surfaced. No Workiva access, no network, no subprocess, no writes, no auto-rewrite.
+Read-only. The detector makes no Workiva requests, network calls, subprocess calls, or writes.

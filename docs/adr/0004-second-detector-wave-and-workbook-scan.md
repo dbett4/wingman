@@ -1,11 +1,10 @@
 # ADR-0004 — Second detector wave (label-hygiene) + workbook-wide scan
 
-**Status:** Accepted (2026-06-15). Extends ADR-0002 (narrow, honest detect/fix scope).
+**Status:** Accepted (2026-06-15). Extends ADR-0002's limited detect/fix scope.
 
 ## Context
 v1 scanned only the open sheet with three detectors (low-contrast, blank-linked, broken-ref).
-Asked to expand "what Wingman can do," the temptation was a wave of presentation-consistency
-detectors. Before writing any, the live `sheetdata` shape was probed on the production
+Before adding presentation-consistency detectors, the live `sheetdata` response was checked on the production
 workbook (ADR-0003) and candidate detectors were measured against all 16 sheets.
 `effectiveFormats` turned out to be rich — full `valueFormat` (`valueFormatType`, `precision`,
 `showThousandsSeparator`, `useParensForNegatives`, prefix/suffix, currency), `textFormat`
@@ -20,34 +19,33 @@ not signal. The measured prevalence decided what ships:
 | naive format-consistency (minority format in a column) | high | **reject** — CURRENCY-`$`-on-section-totals and PERCENT variance rows are *correct* ACFR convention, not defects |
 | negative-without-parens (self-relative to column) | 0 | **defer** — objective and low-noise, but a clean book can't demonstrate it; ship when a dirty book proves it fires |
 
-The lesson mirrors ADR-0002: the detectable set is large; the set that is *both* real and
-low-noise is small. A scan that cries wolf is worse than a narrower one that is trusted.
+Many patterns were easy to detect, but most produced too many false positives to be useful.
 
 ## Decision
 1. **Add one detector — `label-hygiene`.** Flags a leading/trailing space or an internal double
    space in a cell that holds a real text label. Deliberately conservative: requires a letter
    (so spacer `" "` cells, pure numbers, and year headers never fire) and skips stored
    formula/crosswalk strings (`("` / `->`, e.g. CWUDFsStorage). Severity `low`, **surfaced** —
-   never auto-written in this wave (a safe "trim" write is the natural fast-follow).
+   never auto-written in this change. A trim write can be considered separately.
 2. **Add workbook-wide scan.** `GET /scan-workbook?spreadsheetId=…` lists every sheet, runs the
    same per-sheet path, and rolls findings up per sheet + a workbook total. Reuses the proven
    detectors, so it inherits their honesty (page-bound `truncated` flag; a sheet that errors is
    reported, never silently dropped). The panel gets a **Workbook** button and a triage summary.
 
-Cross-sheet behavior is honest about the one DOM-bound capability: **jump-to-cell** drives the
+One cross-sheet limitation remains: **jump-to-cell** drives the
 name box, which only exists for the open sheet, so off-sheet address chips show but do not
 navigate (they say "open that sheet to jump"). The **fix path is pure API**, so Check-fixes /
 Apply work on any sheet, open or not.
 
 ## Consequences
-- Wingman now reviews a whole workbook in one pass — the actual unit a reviewer works in.
+- Wingman now reviews a whole workbook in one pass, which matches how reviewers work.
 - The detector roster grows by exactly one trustworthy class, not a noisy wave.
 - The rejected candidates are recorded with their counts so they are not re-attempted blind.
 - `negative-without-parens` is the documented next detector once a workbook exercises it.
 
 ## Alternatives considered
-- **Ship the full valueFormat consistency wave** — rejected: measured noise (precision-outlier
-  86, format-consistency fires on correct convention). Trust is the asset.
+- **Ship the full valueFormat consistency wave** — rejected because the tests produced too many
+  false positives (86 precision outliers, plus correct formatting conventions).
 - **Make label-hygiene a safe-auto trim** — deferred: a value (not format) write needs its own
   readback/revert proof cycle on a data-bearing cell, outside the ADR-0003 empty-cell harness.
 - **Parallelize workbook scan** — deferred: 16 sequential sheetdata calls are a few seconds;
@@ -63,8 +61,7 @@ Two follow-ups landed once the scan was in use:
   each page normalizes correctly with no running counter. Capped at `MAX_SCAN_PAGES` (25 ≈ 500k
   cells); `truncated` now means "hit the cap with pages remaining," i.e. genuinely incomplete.
 - **Review report.** A pure `buildReport(data)` (in the node-tested layer) turns a workbook scan
-  into a markdown defect list the panel copies to the clipboard — the actual ACFR review handoff
-  artifact. No new write surface.
+  into a Markdown defect list that the panel copies to the clipboard. This adds no Workiva writes.
 
 ## Update — 2026-06-18: drop no-evidence format-consistency noise
 A later "Wave B" (`format_lane.py`) reintroduced the very detectors this ADR rejected —

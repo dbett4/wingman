@@ -1,12 +1,10 @@
 # ADR-0006 — Hardcode / formula-hygiene detector wave
 
-**Status:** Accepted (2026-06-19). Extends ADR-0002 / ADR-0004 (narrow, honest, low-noise detect scope).
+**Status:** Accepted (2026-06-19). Extends the limited, low-noise detector scope in ADR-0002 and ADR-0004.
 
 ## Context
-Asked to "improve the scans," we mined the ACFR project history across several production engagements
-for the corrections made *most often*. One family dominated: **hardcoded values that should be
-formula-driven**, his stated #1 rule ("no hiding hardcoded values in formulas; route criteria and
-amounts through the architecture"). The recurring, cell-detectable shapes, with their frequency:
+We reviewed correction history from several production ACFR engagements to find recurring,
+cell-detectable problems. Hardcoded values in formula-driven areas were the most common:
 
 | pattern | evidence | detectable from |
 |---|---|---|
@@ -15,16 +13,15 @@ amounts through the architecture"). The recurring, cell-detectable shapes, with 
 | bare numeric cell where the column is formula-driven (a raw amount sitting among SUMIFS) | recurring fix recipe (observed on every engagement mined) | cell value + column consensus |
 | `=ROUND(SUM(...),-3)` display rounding | a documented display-rounding anti-pattern | formula string |
 
-A prior lane already shipped the third one as `hardcoded-face-value` (`hardcoded_value.py`), wired
+A prior detector already covered the third pattern as `hardcoded-face-value` (`hardcoded_value.py`), wired
 through the panel's `FORMULA_GAP_KINDS` triage bucket. This wave adds the other three and hardens the
 existing one.
 
-Every candidate was put through an adversarial false-positive pass before any code. Two real FPs were
-caught and gated out (see Decision). The bar is unchanged from ADR-0004: *a scan that cries wolf is
-worse than a narrower one that is trusted.*
+Each candidate was tested for false positives before implementation. Two false positives were
+found and excluded as described below.
 
 ## Decision
-**Ship three new detectors in `formula_hygiene.py`** (companion to `hardcoded_value.py` — that module
+Add three detectors to `formula_hygiene.py` (companion to `hardcoded_value.py` — that module
 flags a cell that should be a formula but is a bare literal; this one flags a formula that *hides* a
 hardcode). All are **surfaced**, `fixable=False` — the correct fix is a mapping/formula change the
 scanner cannot synthesize, and some hardcodes are intentional (a documented PDF-tie cell with an
@@ -54,18 +51,18 @@ fetched; the detector trusts only marked cells **once any marker is present**, s
 the existing unit tests (no markers) and closes the FP on real scans.
 
 The three new kinds join `FORMULA_GAP_KINDS` in `wingman-core.js`, so they roll into the "N formula
-gaps" triage bucket (ADR lane-002) rather than the format-only "review" count, and get honest
-`diagnose_pathways` entries (route-through-architecture, never another hardcode).
+gaps" group rather than the format-only "review" count. Their `diagnose_pathways`
+recommend moving the value into a mapping or other explicit input instead of adding another hardcode.
 
 ## Deferred (recorded so they are not re-attempted blind)
 - **number-stored-as-text** — ADR-0004 already measured and rejected it (5 hits, all year headers);
   TEXT/PERIOD on a year cell is the *intended* fix (documented as the year-header route).
   An adversarial pass confirmed the column-only neighbor model cannot carry the row-band gate it would
   need. Stays out.
-- **scaled-decimal-code-key** (`10796`→`10.796`, sign `1`→`0.001`) — real and data-integrity-impacting
+- **scaled-decimal-code-key** (`10796`→`10.796`, sign `1`→`0.001`) — a real data-integrity problem
   (a documented fix recipe) but niche: it was observed only on dedicated override/support
   sheets, and the `×1000-clean-int` test is near-vacuous without an `override|support|code` sheet-name
-  gate. Ship when that gate exists, scoped to those sheets.
+  gate. Reconsider it when that gate exists and can limit the check to those sheets.
 - **wrong-sign value & cross-foot / sum-vs-subtract** (a documented sum-vs-subtract bug pattern) — need the
   account natural-balance map / statement structure (which rows are details vs totals) the per-cell
   scanner does not have. These belong in the **tieout path** (`checks_bridge.py`), not the cell scan.
@@ -73,10 +70,10 @@ gaps" triage bucket (ADR lane-002) rather than the format-only "review" count, a
   the bar; deferred.
 
 ## Consequences
-- The detector roster grows by three trustworthy classes that directly target the most-repeated
-  manual correction, plus a latent FP fixed in the shipped face-value detector.
-- Net-new write surface: none. All surfaced; the safe-auto lane is untouched.
-- Coverage is honest about its one dependency: the formula detectors are silent without
+- The detector roster grows by three classes that target the most common manual correction,
+  and the existing face-value detector no longer flags cells beyond the fetch cap.
+- No new write behavior is added. All new findings require review.
+- Formula checks do not run without
   `WINGMAN_FORMULA_FETCH`, and the scan chip already reports formula-coverage as partial/off.
 - Tests: `python3 server/formula_hygiene.py` (30), `pytest server/test_formula_hygiene.py` +
   `test_hardcoded_value.py` (84), full `pytest server` (244), `node extension/content.test.js` (205).

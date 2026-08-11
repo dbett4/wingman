@@ -14,8 +14,7 @@ doc-side. The improvement backlog proposed wiring `GET /content/tables/{tid}/ran
 **is** present, but one link covers a whole rectangular block (e.g. a statement's `F5:R112`).
 
 That granularity makes the per-cell detector the wrong tool: a 24-row linked statement block
-includes blank spacer rows, so flagging every blank cell inside it would fire constantly and break
-the cry-wolf bar (ADR-0002/0004). A blank cell inside a populated block is not a defect; only a
+includes blank spacer rows, so flagging every blank cell would create many false positives. A blank cell inside a populated block is not a defect; only a
 wholly-empty block is.
 
 ## Decision
@@ -39,23 +38,23 @@ A new **link lane** (`link_lane.py`) operates at the link level, fed by
    compares source/destination `revision` values when both sides are present. Matching revisions are
    `published`; mismatched revisions emit one surfaced `unpublished-linked-range` finding with the
    source/destination revision evidence and the next action “publish links before export.” Source-only,
-   destination-only, and unknown rows remain proof-gap metadata — they are not auto-written or
-   asserted client-ready without destination/readback evidence.
+   destination-only, and unknown rows are reported as incomplete link data. They are not written
+   automatically or treated as ready without destination readback.
 
 ## Consequences
 - `detect_blank_linked` (per-cell) is formally superseded for live scans by the link-level check;
   it stays in place (harmless, still unit-tested) for synthetic/destination cells.
 - Wingman gains a **link-source map** (`linkRole`/`linkId` on cells, `link_fetch` meta) — the
   foundation for link-health and the DL-source-numeric-formula detector.
-- The link lane now includes a pure publish-state classifier: when the same range-link id has source and
+- The link check now includes a publish-state classifier: when the same range-link id has source and
   destination rows with mismatched revisions, Wingman surfaces `unpublished-linked-range` as a
-  guided/export-proof blocker. It never publishes links automatically.
+  review item. It never publishes links automatically.
 - Verified low-noise on live data: a populated `F5:R112` block (698/698 cells populated) produced
   **0** findings while correctly mapping all 698 cells.
 
 ## Alternatives considered
-- **Per-cell revival (set `isLinked` from the feed)** — rejected: block-level ranges ⇒ every blank
-  spacer row fires; noise destroys scan trust.
+- **Per-cell revival (set `isLinked` from the feed)** — rejected because block-level ranges would
+  flag every blank spacer row.
 - **Default `WINGMAN_LINK_FETCH` off** — rejected: verified, read-only, one GET/scan, high value;
   the off-switch covers the cost-sensitive case.
 - **Flag any blank cell inside a link block** — rejected for the same noise reason; only a wholly-

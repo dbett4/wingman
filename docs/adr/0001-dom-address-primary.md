@@ -20,9 +20,10 @@ stamped `data-copilot-loaded` once the extension was loaded.
 
 ## Decision
 The active cell address is read from `div.dt-formula-cell-indicator` in the page DOM via a
-content-script MutationObserver. Point-grounding is shelved. OCR + grammar correction is
-retained only as a last-resort fallback. The triad is **DOM read → drift guard → API
-validate** (a `read_cells` existence check gates any write). Cell *values* remain API-only.
+content-script MutationObserver. Point-grounding is shelved. OCR plus grammar correction is
+retained only as a last-resort fallback. Wingman reads the address from the DOM, checks that
+the selector still behaves as expected, and validates the cell through `read_cells` before a
+write. Cell *values* remain API-only.
 
 ## Consequences
 - The vision subsystem shrinks dramatically: no fine-tune, no flywheel, no SAM, no heavy VLM.

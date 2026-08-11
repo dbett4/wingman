@@ -1,7 +1,6 @@
 # ADR-0009 — Year-automatic-coercion detector + PERIOD fix
 
-**Status:** Accepted (2026-06-19). New safe-auto detector. Backlog source: internal improvement backlog (Tier 2
-S1). Extends the safe-auto valueFormat lane (ADR-0005) and rides the H1 scale guard (ADR-0007).
+**Status:** Accepted (2026-06-19). Extends the automatic value-format fixes in ADR-0005 and uses the scale guard from ADR-0007.
 
 ## Context
 A 4-digit year stored as a number under Workiva's **AUTOMATIC** value format is silently coerced by
@@ -43,12 +42,12 @@ some `AUTOMATIC` (the defect). The format type is the clean discriminator.
 - **Detect via `calculatedValue != effectiveValue`** — rejected: sheetdata has no `effectiveValue`
   (verified live); the format-type signal is available and cleaner.
 - **Surfaced-only (no auto-fix)** — rejected: the fix is a reversible, no-rescale valueFormat write
-  that fits the existing safe-auto lane; richText still surfaces.
+  that fits the existing automatic fix path; richText remains a review item.
 - **Widen the year range / drop the AUTOMATIC gate** — rejected: would flag deliberate amounts and
   break the cry-wolf bar (ADR-0002/0004).
 
 ## Acceptance
 `python3 detectors.py` (64/64, +7 year cases), `pytest -q` (311 passed; new `FixYearCoercionTests`
-+ config count→10), `node extension/content.test.js` (205/205). **Live proof:** dry-run scan of the
++ config count→10), `node extension/content.test.js` (205/205). **Live check:** a dry-run scan of the
 production "Dates" sheet flagged 25 AUTOMATIC year cells, planned `AUTOMATIC → PERIOD`, and did not
 flag the 2 already-PERIOD year cells (0 false positives). No writes made.

@@ -3,7 +3,7 @@
 **Status:** Accepted. The workbook owner authorized this; it overrides the recommended disposable-sandbox option.
 
 ## Context
-The safe-lane fix (ADR-0002) writes to Workiva, so integration tests need live write +
+The auto-fix in ADR-0002 writes to Workiva, so integration tests need live write +
 readback + revert. The candidate test workbook is **not a throwaway** — it is a live
 production workbook that Wingman had previously been authorized to read. The
 recommendation was to spin up a disposable sandbox; the workbook owner chose to authorize
@@ -20,8 +20,8 @@ Integration write-tests may run against the production workbook, under hard boun
 ## Consequences
 - Tests exercise the real API write path and the real revert harness, not a mock.
 - Residual risk (best-effort revert is not true undo) is accepted by the workbook owner.
-- If a test write ever fails to revert cleanly, that is a stop-the-line event: log it, leave
-  the captured before-state in the receipt, and surface it before any further writes.
+- If a test write fails to restore the prior state, log it, retain the captured state in the
+  receipt, and stop further writes until a person resolves it.
 
 ## Alternatives considered
 - **Disposable sandbox spreadsheet** (recommended) — not chosen; would have removed all risk

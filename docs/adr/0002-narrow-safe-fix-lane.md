@@ -27,12 +27,12 @@ All other findings are **surfaced-not-fixed**: blank linked cells, richText cont
 broken references are reported with "needs Workiva UI" / "needs review" — never auto-written.
 
 ## Consequences
-- The auto-fix lane is honest and narrow; most ACFR styled text is richText, so the common
-  case is surfaced, not one-click fixed.
-- Zero data-integrity risk in v1's write path.
-- Blank-DL auto-fix (behind a structural pre-screen) is the natural fast-follow.
+- Auto-fix covers a small subset of findings. Most styled ACFR text is richText, so the
+  common result is a review item rather than a one-click fix.
+- The v1 write path never changes financial values or links.
+- Blank linked cells remain a possible later feature after they have a structural pre-screen.
 
 ## Alternatives considered
 - **Fix to a fixed ink token** — rejected: flattens a deliberately colored cell to generic ink.
 - **Surface contrast too (no v1 write)** — rejected: contradicts the Scan+Fix scope.
-- **Blank-DL auto-fix now** — deferred: RED, the #1 rated risk; ship after the safe spine is proven.
+- **Blank-DL auto-fix now** — deferred because re-linking has no reliable undo.

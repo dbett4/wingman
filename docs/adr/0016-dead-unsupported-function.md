@@ -1,4 +1,4 @@
-# ADR 0016 — Surface dead / unsupported functions (D2 import-blocker detector)
+# ADR 0016 — Detect functions that Workiva cannot import
 
 **Status:** Accepted — 2026-06-22
 **Track:** formula-portability (sibling of ADR-0015 / D1)
@@ -11,17 +11,17 @@ this the highest-weighted recurring portability defect: on one county FY25 engag
 `FALSE()` calls** were the single #1 import blocker. The proven detection already lives outside Wingman in
 the external checks toolkit's `corpus_audit.py` as `RE_DEAD` (`dead_func`), the highest-weighted
 corpus detector (weight 5.0, vs 2.0 for the D1 unbounded-range detector) precisely because a `#NAME?`
-breaks the line completely rather than only on round-trip. Wingman had no scan surface for it, so the
-blocker was invisible until an import attempt.
+breaks the line completely rather than only on round-trip. Wingman did not check for this before an
+import attempt.
 
-This is the natural sibling of ADR-0015 (D1): another deterministic, formula-text portability defect
-that lands in `formula_hygiene` with the same surfaced, per-sheet-grouped shape.
+Like ADR-0015, this is a deterministic formula-text check. Results are grouped by sheet
+to avoid repeating the same warning for thousands of cells.
 
 ## Decision
 
-Add `formula_hygiene.detect_dead_functions` as the 5th Lane G detector — **surfaced only,
-`fixable=False`** (a per-function formula rewrite is a judgment Wingman cannot synthesize and a
-Workiva write it must not auto-do).
+Add `formula_hygiene.detect_dead_functions` as the fifth formula-hygiene detector. It
+sets `fixable=False` and creates a review item because the correct rewrite depends on
+the function and the surrounding formula.
 
 - **Gate (mirrors `corpus_audit.RE_DEAD`):** `_DEAD_CALL` matches the dynamic-array / spill family
   (`FILTER, SORT, SORTBY, UNIQUE, LAMBDA, LET, VSTACK, HSTACK, SEQUENCE, TOROW, TOCOL, TAKE, DROP,
@@ -67,15 +67,15 @@ correct for the named defect.
 
 ## Boundary
 
-Read-only / surfaced. The detector reads normalized cell formulas already in the scan path and emits a
+Read-only. The detector reads normalized cell formulas already in the scan path and emits a
 Review finding. It performs **no Workiva write** and proposes **no auto-rewrite** — each rewrite is a
-judgment a human applies (or a gated script generates) with before/after proof.
+judgment that a person applies, or that a controlled script generates, with before-and-after readback.
 
 ## Alternatives considered
 
 - **Auto-fix (e.g. strip `()` from `FALSE()`)** — rejected. Even the mechanical-looking TRUE()/FALSE()
   case rides in formulas whose surrounding logic a scanner cannot prove safe to rewrite; the whole
-  detector stays surfaced for one consistent posture.
+  detector remains review-only.
 - **Fixed per-sheet signature (like D1)** — rejected in favour of grouping by function set: the
   remediation differs by function, and naming the set is more actionable while still collapsing the
   thousands-of-`FALSE()` case to one row.

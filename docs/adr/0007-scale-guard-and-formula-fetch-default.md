@@ -25,7 +25,7 @@ the live code:
 1. **Scale-change write guard.** `fixer.scale_change_block(before_vf, planned_vf)` returns a
    refusal reason when the planned write would change `enteredIn` or `shownIn` from the cell's
    current scale; `fix_format_copy` and `fix_negative_parens` return
-   `status: refused` (surface in Workiva UI) before any write. Only a scale field **present** in
+   `status: refused` (shown for review in Workiva) before any write. Only a scale field **present** in
    the planned format is compared — an omitted field is left untouched by `applyFormats`, so it is
    safe — and absent values are normalized to the platform default (`ONES`). This is a hard
    never-rescale gate, in the same family as `preflight_no_text_wrapper` (W21 trap).
@@ -40,7 +40,7 @@ the live code:
 
 ## Consequences
 - Format-copy and negative-parens fixes can no longer silently rescale a cell; a cross-scale
-  neighbor consensus surfaces instead of corrupting. The common case (neighbors on the same scale,
+  neighbor consensus becomes a review item instead. The common case (neighbors on the same scale,
   or targets that carry no scale field) is unaffected.
 - The formula-hygiene wave is live out of the box at ~1 extra GET per scan; cost-sensitive users
   opt out with `WINGMAN_FORMULA_FETCH=off`, and `=full` restores full-sheet coverage.
@@ -48,7 +48,7 @@ the live code:
 
 ## Alternatives considered
 - **Strip `enteredIn`/`shownIn` from copied formats instead of refusing** — rejected: a copy that
-  needed a scale change is genuinely unsafe to auto-apply; surface it for human judgment.
+  needed a scale change is unsafe to apply automatically; leave it for human review.
 - **Keep formula fetch off; document louder** — rejected: documentation does not make dead
   detectors fire; the scoped default makes them useful at bounded cost.
 - **Flip straight to full-sheet default-on** — rejected: unbounded latency/cost on large sheets;

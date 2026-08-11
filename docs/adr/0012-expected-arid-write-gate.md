@@ -5,7 +5,7 @@ Status: Accepted
 
 ## Context
 
-Wingman reads and writes Workiva through client-credentials auth. If the local environment points at the wrong Workiva account/workspace, a safe-auto write could target the wrong tenant even though the spreadsheet/sheet IDs are syntactically valid. A companion internal tool already uses an opt-in `WORKIVA_EXPECTED_ARID` guard for mutating Workiva requests; Wingman needed the same boundary.
+Wingman reads and writes Workiva through client-credentials auth. If the local environment points at the wrong Workiva account or workspace, an automatic write could target the wrong tenant even though the spreadsheet and sheet IDs are valid. A companion internal tool already uses an opt-in `WORKIVA_EXPECTED_ARID` check for Workiva writes; Wingman needed the same check.
 
 ## Decision
 
@@ -20,7 +20,7 @@ The gate is implemented in `server/fixer.py` because that is Wingman's shared wr
 
 ## Consequences
 
-This does not add any write capability. It reduces wrong-tenant blast radius for existing safe-auto writes and mirrors that proven guard pattern.
+This does not add any write capability. It prevents existing automatic fixes from writing to an unexpected account or workspace.
 
 ## Verification
 

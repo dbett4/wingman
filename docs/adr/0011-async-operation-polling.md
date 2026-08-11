@@ -19,7 +19,7 @@ Relative operation URLs are resolved against the configured Workiva API base. Po
 
 ## Scope
 
-This affects forward writes and revert writes that use the shared `_post` / `_put` helpers. The safe-lane dry-run behavior is unchanged. The fix does not add new write capability; it only prevents the existing write harness from trusting an async operation before it has actually completed.
+This affects forward writes and restores that use the shared `_post` / `_put` helpers. Dry-run behavior is unchanged. The change does not add any write capability; it prevents the existing code from reading a result before the asynchronous operation has finished.
 
 ## Verification
 

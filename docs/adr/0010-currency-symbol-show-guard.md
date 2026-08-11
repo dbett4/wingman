@@ -5,7 +5,7 @@ Status: Accepted
 
 ## Context
 
-Workiva value-format payloads can carry both `showCurrencySymbol` and `currencySymbol`. The safe-lane formatter sometimes copies a neighbor's whole `valueFormat` as the planned forward write. If that copied format includes `currencySymbol` while `showCurrencySymbol` is false or absent, Workiva can still surface the symbol in places that should stay body-row clean.
+Workiva value-format payloads can carry both `showCurrencySymbol` and `currencySymbol`. The automatic formatter sometimes copies a neighbor's whole `valueFormat` as the planned write. If that copied format includes `currencySymbol` while `showCurrencySymbol` is false or absent, Workiva can still display the symbol in body rows where it does not belong.
 
 This is different from restore/revert. Revert must write the captured before-state faithfully. The guard only applies to planned forward writes.
 
