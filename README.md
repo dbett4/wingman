@@ -5,16 +5,24 @@
 > development timeline. The City of Riverton data is fictional. No client data
 > or credentials are included.
 
-Wingman is a Chrome extension and local Python service for reviewing financial
-reporting workbooks in Workiva. It finds problems that disappear in an export, such
-as broken links, formula hardcodes, formatting drift, and years displayed as `2,025`.
-For the small set of changes it can check and undo, it can also apply the fix.
+## The problem this answers
+
+A financial statement can “tie out” and still be wrong in ways an export will not
+show: broken live links, hardcoded values hiding inside formulas, formatting drift,
+years rendered as `2,025`, low-contrast text, stray label whitespace.
+
+Reviewers need those defects found in the live workbook. Most of them still need
+human judgment. Only a narrow set should ever be auto-fixed — and only if the tool
+can prove the fix and undo it.
+
+**One-line pitch:** find workbook defects in the live editor; automate only the
+fixes you can confirm, read back, and reverse.
+
+Wingman is a Chrome extension plus a local Python service for that loop in
+Workiva-shaped reporting workbooks. Fictional demo data only; not affiliated with
+or endorsed by Workiva.
 
 ![Tests](https://github.com/dbett4/wingman/actions/workflows/test.yml/badge.svg)
-
-Current clean-run result: 462 Python tests pass, 13 integration-dependent tests
-skip (475 collected), and 243 extension tests pass. CI runs the same Python and
-extension commands on Python 3.11 and 3.12.
 
 ## Current demo
 
@@ -25,13 +33,16 @@ confirmed write. No screenshots or sample data in this repository come from a cl
 ## Why I built it
 
 Financial reports often live in cloud editors where an exported file omits useful
-context. Reviewers still need to catch broken references, hardcoded values inside
-formulas, low-contrast text, stray label whitespace, and inconsistent number formats.
-
-Wingman turns the checks I saw repeatedly in government financial reporting work into
+context. Wingman turns repeated government financial-reporting review checks into
 detectors. It does not try to repair every finding. A change is automated only when
 the service can capture the original state, predict the result, read the cell back,
 and restore the original value if the result differs.
+
+## Proof signal
+
+Current clean-run result: 462 Python tests pass, 13 integration-dependent tests
+skip (475 collected), and 243 extension tests pass. CI runs the same Python and
+extension commands on Python 3.11 and 3.12.
 
 ## Architecture
 
