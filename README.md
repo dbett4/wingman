@@ -1,10 +1,5 @@
 # Wingman
 
-> **Provenance.** This is a sanitized public extract published in August 2026;
-> its public Git dates are publication dates rather than the original private
-> development timeline. The City of Riverton data is fictional. No client data
-> or credentials are included.
-
 ## The problem this answers
 
 A financial statement can “tie out” and still be wrong in ways an export will not
@@ -21,6 +16,10 @@ fixes you can confirm, read back, and reverse.
 Wingman is a Chrome extension plus a local Python service for that loop in
 Workiva-shaped reporting workbooks. Fictional demo data only; not affiliated with
 or endorsed by Workiva.
+
+> **Provenance.** Sanitized public extract published August 2026; Git dates are
+> publication dates, not the original private development timeline. City of
+> Riverton data is fictional — no client data or credentials are included.
 
 ![Tests](https://github.com/dbett4/wingman/actions/workflows/test.yml/badge.svg)
 
@@ -40,7 +39,7 @@ and restore the original value if the result differs.
 
 ## Proof signal
 
-Current clean-run result: 462 Python tests pass, 13 integration-dependent tests
+Current clean-run result: 469 Python tests pass, 6 integration-dependent tests
 skip (475 collected), and 243 extension tests pass. CI runs the same Python and
 extension commands on Python 3.11 and 3.12.
 
@@ -107,7 +106,7 @@ available, and the adapter returns an explicit unavailable result when it is abs
 
 ```bash
 pip install pytest
-python3 -m pytest server/          # 462 pass, 13 skip (475 collected)
+python3 -m pytest server/          # 469 pass, 6 skip (475 collected)
 node extension/content.test.js     # 243 tests
 scripts/smoke_check.sh             # route and write-gate smoke checks
 ```
