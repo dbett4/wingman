@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+# uv and Node are supplied by the Amp orb base image. Python 3.12 matches CI.
+echo 'Preparing Python 3.12 and the repository virtual environment'
+time uv python install 3.12
+if [[ ! -x .venv/bin/python ]] || ! .venv/bin/python -c 'import sys; assert sys.version_info[:2] == (3, 12)'; then
+  uv venv --clear --python 3.12 .venv
+fi
+
+echo 'Installing test and optional vision dependencies'
+# The repository has no lockfile; use its existing dependency constraints.
+time uv pip install --python .venv/bin/python -r server/requirements.txt pytest
+
+# Amp and supervised services use separate non-interactive login shells.
+# Scope activation to this checkout, including commands run in subdirectories.
+marker='# Wingman orb virtual environment'
+if ! grep -Fqx "$marker" "$HOME/.bash_profile" 2>/dev/null; then
+  cat >> "$HOME/.bash_profile" <<EOF
+
+$marker
+case "\$PWD/" in
+  "$REPO_ROOT/"*)
+    if [[ -f "$REPO_ROOT/.venv/bin/activate" && "\${VIRTUAL_ENV:-}" != "$REPO_ROOT/.venv" ]]; then
+      source "$REPO_ROOT/.venv/bin/activate"
+    fi
+    ;;
+esac
+EOF
+fi
+
+echo 'Checking toolchain and imports'
+node --version
+.venv/bin/python -c 'import sys, pytest, numpy, PIL; sys.path.insert(0, "server"); import app; print("Python, pytest, vision dependencies, and service imports ready")'
+echo 'Orb setup ready; local credentials are configured only after snapshot activation.'

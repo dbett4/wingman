@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+# Run after snapshot activation, never during setup: tokens must be per orb.
+# The existing helper preserves tokens and credentials on subsequent resumes.
+.venv/bin/python scripts/configure_local.py

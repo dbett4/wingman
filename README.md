@@ -111,6 +111,20 @@ node extension/content.test.js     # 243 tests
 scripts/smoke_check.sh             # route and write-gate smoke checks
 ```
 
+## Amp orbs
+
+`.agents/setup` prepares Python 3.12 in `.venv` with pytest and the optional
+NumPy/Pillow vision dependencies. It uses uv and Node from the orb base image;
+the extension needs no npm install. Repository login shells activate `.venv`
+automatically, so the test commands above work without manual activation.
+Setup is idempotent and reuses installed dependencies on warm snapshots.
+
+`.agents/resume` generates the local service/extension token after snapshot
+activation and preserves it on subsequent wakes. Setup does not create credentials
+or start services. Workiva OAuth credentials and the external checks CLI remain
+optional, user-supplied integrations; live Workiva operations require credentials.
+For manual dependency changes, use `uv pip install --python .venv/bin/python`.
+
 ## Scope
 
 This repository was extracted from tooling used on live government financial reports.

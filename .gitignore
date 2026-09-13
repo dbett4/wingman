@@ -22,6 +22,8 @@ wingman-events-*.jsonl
 __pycache__/
 .pytest_cache/
 .lazyweb/
+.venv/
+.amp/portals/*
 
 # macOS
 .DS_Store
