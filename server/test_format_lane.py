@@ -23,6 +23,65 @@ def _accounting_vf(**overrides):
 
 
 class FormatLaneTests(unittest.TestCase):
+    @staticmethod
+    def _accounting_column_with_target(target):
+        neighbor_vf = _accounting_vf(prefix="$")
+        return [
+            target,
+            {"addr": "B1", "calculatedValue": "1,000", "valueFormat": dict(neighbor_vf)},
+            {"addr": "B3", "calculatedValue": "3,000", "valueFormat": dict(neighbor_vf)},
+        ]
+
+    def test_automatic_year_is_owned_by_year_detector_despite_neighbor_consensus(self):
+        cell = {
+            "addr": "B2",
+            "calculatedValue": "2025",
+            "valueFormat": {"valueFormatType": "AUTOMATIC"},
+        }
+        cells = self._accounting_column_with_target(cell)
+
+        self.assertEqual(fl.scan_format_lane(cells), [])
+        self.assertIsNotNone(fl.detectors.detect_year_automatic_coercion(cell))
+
+    def test_period_year_ignores_conflicting_neighbor_consensus(self):
+        cell = {
+            "addr": "B2",
+            "calculatedValue": "2024",
+            "valueFormat": {"valueFormatType": "PERIOD"},
+        }
+        cells = self._accounting_column_with_target(cell)
+
+        self.assertEqual(fl.scan_format_lane(cells), [])
+        self.assertIsNone(fl.detectors.detect_year_automatic_coercion(cell))
+
+    def test_explicit_number_year_shaped_amount_remains_eligible(self):
+        cell = {
+            "addr": "B2",
+            "calculatedValue": "2025",
+            "valueFormat": {"valueFormatType": "NUMBER", "showThousandsSeparator": False},
+        }
+        findings = fl.scan_format_lane(self._accounting_column_with_target(cell))
+
+        self.assertEqual(
+            {f["kind"] for f in findings},
+            {"missing-thousands-separator", "number-on-accounting-column", "prefix-mismatch"},
+        )
+        self.assertTrue(all(f["fix_lane"] == "safe-auto" for f in findings))
+
+    def test_out_of_range_automatic_amount_remains_eligible(self):
+        cell = {
+            "addr": "B2",
+            "calculatedValue": "1800",
+            "valueFormat": {"valueFormatType": "AUTOMATIC", "showThousandsSeparator": False},
+        }
+        findings = fl.scan_format_lane(self._accounting_column_with_target(cell))
+
+        self.assertEqual(
+            {f["kind"] for f in findings},
+            {"missing-thousands-separator", "number-on-accounting-column", "prefix-mismatch"},
+        )
+        self.assertTrue(all(f["fix_lane"] == "safe-auto" for f in findings))
+
     def test_missing_thousands_flags_large_number(self):
         cell = {
             "addr": "E10",

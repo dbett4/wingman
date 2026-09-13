@@ -1,0 +1,39 @@
+{
+  "name": "City of Riverton · FY2025 review",
+  "spreadsheetId": "de00",
+  "notice": "Fictional data. Formula results are seeded, not recalculated. No Workiva connection.",
+  "sheets": [
+    {
+      "id": "de01",
+      "name": "Statement of activities",
+      "rows": [
+        ["GOVERNMENTAL ACTIVITIES", "", ""],
+        ["Revenue · dollars", 2025, 2024],
+        ["Property taxes", 2450000, 2320000],
+        ["Intergovernmental  revenue ", 875000, 810000],
+        ["Charges for services", 315000, 292000],
+        ["Investment income", 94000, 78000],
+        ["Total revenue", 3746500, 3500000],
+        ["Transfers from other funds", "#REF!", 0]
+      ],
+      "formulas": {"B7": "=SUM(B3:B6)+12500", "B8": "=#REF!"},
+      "formats": {
+        "B2": {"valueFormat": {"valueFormatType": "AUTOMATIC"}},
+        "C2": {"valueFormat": {"valueFormatType": "PERIOD"}},
+        "A5": {"textFormat": {"fontColor": "#AAAAAA"}}
+      }
+    },
+    {
+      "id": "de02",
+      "name": "Review notes",
+      "rows": [
+        ["REVIEW NOTES", ""],
+        ["Fiscal year", 2025],
+        ["Reporting basis", "Accrual"],
+        ["Scope", "Fictional demonstration only"]
+      ],
+      "formulas": {},
+      "formats": {"B2": {"valueFormat": {"valueFormatType": "PERIOD"}}}
+    }
+  ]
+}

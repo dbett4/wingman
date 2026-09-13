@@ -23,11 +23,25 @@ or endorsed by Workiva.
 
 ![Tests](https://github.com/dbett4/wingman/actions/workflows/test.yml/badge.svg)
 
-## Current demo
+## Try it without credentials
 
-The demo uses a fictional City of Riverton workbook. It scans the workbook, separates
-mechanical fixes from items that need review, and shows the readback result after a
-confirmed write. No screenshots or sample data in this repository come from a client.
+```bash
+python3 server/demo.py     # Python 3.11+, standard library only; default port 8771
+```
+
+Open port 8771 on your local machine. In an Amp orb, run `amp orb services ensure`
+and open its **Wingman demo** portal instead.
+
+The fictional City of Riverton workbook runs through the **actual extension panel,
+service routes, detectors, and fixer** against a session-isolated simulated Workiva
+API. Preview and apply a label, year-format, or contrast fix; inject a mismatched
+write to exercise readback/restore; download a fresh review packet. No account or
+extension installation is needed. No sample data comes from a client.
+
+This is a workflow demonstration, **not live Workiva integration evidence or a
+detector-accuracy benchmark**. Formula results are seeded, and external checks,
+vision, publishing, OAuth, async jobs, and collaborative edits are not simulated.
+See the [two-minute walkthrough and simulation boundary](docs/demo.md).
 
 ## Why I built it
 
@@ -35,13 +49,14 @@ Financial reports often live in cloud editors where an exported file omits usefu
 context. Wingman turns repeated government financial-reporting review checks into
 detectors. It does not try to repair every finding. A change is automated only when
 the service can capture the original state, predict the result, read the cell back,
-and restore the original value if the result differs.
+and attempt to restore the original value if the result differs.
 
 ## Proof signal
 
-Current clean-run result: 469 Python tests pass, 6 integration-dependent tests
-skip (475 collected), and 243 extension tests pass. CI runs the same Python and
-extension commands on Python 3.11 and 3.12.
+Current clean-run result: 488 Python tests pass, 6 integration-dependent tests
+skip (494 collected), and 243 extension tests pass. A separate Chromium workflow
+test passes against the disposable demo. CI runs the Python/extension commands on
+Python 3.11 and 3.12 and the browser workflow on Python 3.12.
 
 ## Architecture
 
@@ -66,10 +81,11 @@ workbook and account before it allows a write.
 ## Write controls
 
 - Writes are dry runs until the user confirms them.
-- Before writing, the service saves the prior state and checks that the target has not
-  changed.
-- After writing, it reads the cell again. A mismatch triggers a restore from the saved
-  state.
+- Before writing, the service re-reads the cell and captures its prior state. Apply
+  is not yet bound to an immutable preview, and this is not a concurrent-edit lock.
+- After writing, it reads the cell again. A mismatch triggers a best-effort restore
+  from the saved state. Restore requests can fail and are not yet verified by a
+  second readback; this is not guaranteed undo.
 - Scale and currency checks prevent format changes from altering stored values or
   adding a currency symbol where it does not belong.
 - The service refuses writes outside an explicit workbook allowlist.
@@ -106,10 +122,23 @@ available, and the adapter returns an explicit unavailable result when it is abs
 
 ```bash
 pip install pytest
-python3 -m pytest server/          # 469 pass, 6 skip (475 collected)
+python3 -m pytest server/          # 488 pass, 6 skip (494 collected)
 node extension/content.test.js     # 243 tests
 scripts/smoke_check.sh             # route and write-gate smoke checks
 ```
+
+The demo HTTP tests are included in `pytest server/`. For the browser workflow:
+
+```bash
+npm install -g agent-browser@0.37.1
+agent-browser install             # add --with-deps on a fresh Linux CI runner
+python3 -m pytest scripts/test_demo_browser.py -q
+```
+
+It starts and stops its own demo, checks preview/apply/recovery through the rendered
+panel, and verifies narrow-layout overflow and control heights. In an orb,
+`agent-browser` is preinstalled; use `.venv/bin/python -m pytest` if your shell has
+not activated the repository virtual environment.
 
 ## Amp orbs
 
@@ -124,6 +153,16 @@ activation and preserves it on subsequent wakes. Setup does not create credentia
 or start services. Workiva OAuth credentials and the external checks CLI remain
 optional, user-supplied integrations; live Workiva operations require credentials.
 For manual dependency changes, use `uv pip install --python .venv/bin/python`.
+
+`.amp/services.yaml` declares only the credential-free demo. `amp orb services ensure`
+starts it with a health check and an authenticated portal; it never starts the live
+Workiva service. Browser sessions and demo state are disposable.
+
+## Next milestones
+
+The [improvement roadmap](docs/roadmap.md) tracks the remaining write-safety,
+detector-evaluation, review-history, and reviewer-pilot work. The demo is the first
+milestone, not a claim that those capabilities already exist.
 
 ## Scope
 

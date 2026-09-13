@@ -8,7 +8,10 @@
   var SEL = "div.dt-formula-cell-indicator";
   var frame = window.top === window ? "top" : "iframe";
   document.documentElement.setAttribute("data-copilot-loaded", frame);
-  if (frame !== "top") return;  // pill/panel only in the top document
+  // The standalone demo may itself be embedded in a preview portal. Chrome-injected
+  // content scripts have no currentScript; the extension remains top-frame-only.
+  var demoEmbed = document.currentScript && document.currentScript.hasAttribute("data-wingman-demo");
+  if (frame !== "top" && !demoEmbed) return;
 
   function parseIds() {
     var m = location.href.match(/\/spreadsheet\/([0-9a-fA-F]+)[\s\S]*?\/sheet\/([0-9a-fA-F]+)/);
@@ -677,9 +680,9 @@
     ".wm-state{padding:30px 16px;text-align:center;color:var(--muted)}.wm-state b{display:block;color:var(--fg);font-size:14px;font-weight:500;margin-bottom:5px;text-wrap:balance}" +
     ".wm-state-reload{margin-top:10px}.wm-state-hint{display:block;margin-top:8px;font-size:12px;color:var(--muted)}" +
     ".wm-grp{border-bottom:1px solid var(--border-soft)}" +
-    ".wm-row{display:flex;align-items:center;gap:9px;padding:10px 12px;cursor:pointer;transition:background-color .12s ease}.wm-row:hover{background:var(--row-hover)}" +
-    ".wm-sev{font-size:11px;width:34px;flex:none;color:var(--muted)}.wm-sev.high{color:var(--warn)}" +
-    ".wm-kind{font-weight:500;text-transform:capitalize}.wm-sig{color:var(--muted);font-size:12px}" +
+    ".wm-row{display:flex;flex-wrap:wrap;align-items:center;gap:9px;padding:10px 12px;cursor:pointer;transition:background-color .12s ease}.wm-row:hover{background:var(--row-hover)}" +
+    ".wm-sev{font-size:11px;min-width:46px;flex:none;color:var(--muted)}.wm-sev.high{color:var(--warn)}" +
+    ".wm-kind{flex:1;min-width:0;overflow-wrap:anywhere;font-weight:500;text-transform:capitalize}.wm-sig{flex-basis:100%;order:1;overflow-wrap:anywhere;color:var(--muted);font-size:12px}" +
     ".wm-count{margin-left:auto;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;border:1px solid var(--border);border-radius:999px;padding:1px 8px}" +
     ".wm-lane{font-size:11px;border-radius:999px;padding:1px 8px;color:var(--muted);border:1px solid var(--border)}.wm-lane.fix{color:var(--accent-text);border-color:var(--accent-border)}" +
     ".wm-det{display:none;padding:0 12px 12px 12px}.wm-grp.open .wm-det{display:block}" +
@@ -688,7 +691,7 @@
     ".wm-jump{display:inline-flex;align-items:center;justify-content:center;font:inherit;line-height:1;cursor:pointer;color:var(--accent-text);background:var(--accent-surface);border:1px solid var(--accent-border);border-radius:6px;padding:3px 8px;margin-left:6px;flex:none;transition:background-color .12s ease,border-color .12s ease,color .12s ease,transform .08s ease}.wm-jump:hover{background:var(--accent-surface-hover);border-color:var(--accent-border-hover);color:var(--accent-text-hover)}.wm-jump:active{transform:scale(.96)}" +
     ".wm-addr.busy,.wm-jump.busy{opacity:.5;cursor:progress}.wm-addr.err,.wm-jump.err{color:var(--err);border-color:var(--err-border)}" +
     ".wm-toast{position:absolute;left:50%;bottom:10px;transform:translateX(-50%) translateY(4px);background:var(--toast-bg);color:#fff;border:1px solid var(--border);border-radius:7px;padding:6px 11px;font-size:12px;box-shadow:var(--toast-shadow);pointer-events:none;opacity:0;transition:opacity .15s ease,transform .15s ease}.wm-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}.wm-toast.err{color:var(--err)}.wm-toast.actionable{pointer-events:auto}" +
-    ".wm-fix{display:flex;align-items:center;gap:9px;padding:7px 0;border-top:1px solid var(--border-soft)}" +
+    ".wm-fix{display:flex;flex-wrap:wrap;align-items:center;gap:9px;padding:7px 0;border-top:1px solid var(--border-soft)}.wm-fix>.wm-mono{min-width:0;max-width:100%;overflow-wrap:anywhere}" +
     ".wm-chip{width:13px;height:13px;border-radius:3px;border:1px solid var(--chip-border);display:inline-block;vertical-align:-2px}" +
     ".wm-arrow{color:var(--sep)}.wm-ratio{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}.wm-note{color:var(--muted);font-size:12px;font-style:italic}.wm-done{color:var(--accent);font-weight:500}.wm-err{color:var(--err)}" +
     // workbook sheet-list accordion (own classes so the inner .wm-grp.open selector never bleeds into it)

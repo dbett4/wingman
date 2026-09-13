@@ -28,7 +28,12 @@ def _numeric_cell_guards(cell: dict) -> bool:
     if cell.get("isMerged"):
         return False
     vf = cell.get("valueFormat") or {}
-    if (vf.get("valueFormatType") or "").upper() == "TEXT":
+    vft = (vf.get("valueFormatType") or "").upper()
+    if vft in ("TEXT", "PERIOD"):
+        return False
+    # The dedicated year detector owns AUTOMATIC 4-digit years and supplies the
+    # canonical PERIOD target. Do not let neighboring amount formats compete with it.
+    if detectors.detect_year_automatic_coercion(cell) is not None:
         return False
     return True
 

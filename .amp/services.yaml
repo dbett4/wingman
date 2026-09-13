@@ -1,0 +1,8 @@
+services:
+  wingman-demo:
+    command: python3 server/demo.py --port "$PORT"
+    port: 8771
+    health: /health
+    portal:
+      title: Wingman demo
+      description: Fictional workbook, real detectors and fix logic. No Workiva credentials or live writes.

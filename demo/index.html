@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Try Wingman's real financial-workbook detectors and guarded fixes on fictional data. No account required.">
+  <title>Wingman · Interactive workbook review</title>
+  <link rel="icon" href="/icons/icon128.png">
+  <link rel="stylesheet" href="/demo/demo.css">
+  <script src="/demo/demo.js" defer></script>
+  <script src="/wingman-core.js" defer></script>
+  <script src="/wingman-panel.js" data-wingman-demo defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><img src="/icons/icon128.png" width="28" height="28" alt="">Wingman</a>
+    <span class="badge">INTERACTIVE DEMO</span>
+    <a href="https://github.com/dbett4/wingman" target="_blank" rel="noreferrer">View source ↗</a>
+  </header>
+  <main>
+    <section class="intro" aria-labelledby="headline">
+      <div><p class="eyebrow">FINANCIAL WORKBOOK REVIEW</p><h1 id="headline">Catch what a tie-out misses.</h1>
+        <p>Find hidden defects. Preview a narrow fix. Check what actually changed.</p></div>
+      <div class="simulation"><strong>Real detectors. Fictional workbook.</strong><br>No account, installation, or Workiva connection.<br>Your session is isolated and resets after an hour.</div>
+    </section>
+    <div class="workspace">
+      <div class="workbook-column">
+        <section class="workbook" aria-labelledby="workbook-title">
+          <div class="workbook-heading"><div><p class="eyebrow">CITY OF RIVERTON</p><h2 id="workbook-title">FY2025 financial statements</h2></div><span class="local-label">Simulated editor</span></div>
+          <div class="formula-bar"><div class="dt-formula-cell-indicator" id="address">B2</div><span aria-hidden="true">ƒx</span><output id="formula" aria-label="Selected cell content">2025</output></div>
+          <div class="grid-scroll" tabindex="0" role="region" aria-label="Fictional workbook cells"><table id="grid"><caption>Loading fictional workbook…</caption></table></div>
+          <nav id="sheets" aria-label="Workbook sheets"></nav>
+          <p class="sheet-note">Select a cell to inspect its stored value or formula. Results are seeded; this is not a formula engine.</p>
+        </section>
+        <section class="guide" aria-labelledby="guide-title">
+          <h2 id="guide-title">A two-minute review</h2>
+          <ol><li><strong>Find the evidence.</strong> Start with the year in B2, whitespace in A4, and low-contrast label in A5.</li>
+            <li><strong>Preview, then apply.</strong> In Wingman, open a fixable finding and select “Check fixes.” Nothing changes until “Apply.”</li>
+            <li><strong>Keep judgment human.</strong> The hardcoded formula and broken reference remain review items.</li></ol>
+          <div class="demo-actions"><button id="failure" type="button">Make next write mismatch</button><button id="reset" type="button">Reset my workbook</button><button id="report" type="button">Download review packet</button></div>
+          <p id="demo-status" role="status">Loading your session…</p>
+        </section>
+        <section class="receipt" aria-labelledby="receipt-title">
+          <div class="section-heading"><h2 id="receipt-title">What happened</h2><span id="request-count">0 simulated API requests</span></div>
+          <p id="outcome" role="status">No changes yet. A scan reads; a preview plans; only Apply writes.</p>
+          <div id="trace"></div>
+          <p class="limitation">This demonstrates the current readback and best-effort restore path—not atomic writes or guaranteed undo. Live collaboration, OAuth, rate limits, async jobs, vision, external checks, and publishing are not simulated.</p>
+        </section>
+      </div>
+      <aside class="review-column" aria-label="Wingman review panel">
+        <div class="review-heading"><span class="eyebrow">THE ACTUAL EXTENSION PANEL</span><button id="open-panel" type="button">Show / hide review</button></div>
+        <div id="panel-slot"></div>
+        <p class="panel-note">Same panel, service routes, and detection/fix code as the extension. Browser messaging and the Workiva API are simulated.</p>
+      </aside>
+    </div>
+  </main>
+  <footer>Built by <a href="https://davebettner.com" target="_blank" rel="noreferrer">Dave Bettner</a> · Fictional data only · Not affiliated with Workiva</footer>
+</body>
+</html>
