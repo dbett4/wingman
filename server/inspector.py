@@ -12,6 +12,7 @@ import re
 from urllib.parse import quote, urlsplit
 
 import wk_client as wk
+from cell_sources import formula_references, range_links
 
 
 def validate_target(spreadsheet_id, sheet_id, addr):
@@ -84,7 +85,7 @@ def inspect_cell(spreadsheet_id, sheet_id, addr, token, ctx):
         "observedAt": datetime.now(timezone.utc).isoformat(),
         "policy": {"status": "not_connected"},
         "downstream": {"status": "not_inspected"},
-        "source": {"status": "not_traced"},
+        "source": {"formula": {"status": "not_inspected"}, "rangeLinks": {"status": "not_inspected"}},
         "warnings": [],
     }
     meta = _observe(lambda: _sheet(spreadsheet_id, sheet_id, token, ctx))
@@ -99,6 +100,7 @@ def inspect_cell(spreadsheet_id, sheet_id, addr, token, ctx):
     read_cell = lambda: _cell(spreadsheet_id, sheet_id, addr, token, ctx)
     read_content = lambda: _content(table_id, addr, token, ctx)
     cell, content = _observe(read_cell), _observe(read_content)
+    links = range_links(table_id, addr, token, ctx) if cell["status"] == "observed" else {"status": "not_inspected"}
     cell_after, content_after = _observe(read_cell), _observe(read_content)
     # Python equality equates False with 0; native content types must remain distinct.
     if any(before["status"] == after["status"] == "observed"
@@ -129,9 +131,10 @@ def inspect_cell(spreadsheet_id, sheet_id, addr, token, ctx):
                 "number" if isinstance(value, (int, float)) else
                 "text" if isinstance(value, str) else "unknown")
         result["content"].update(kind=kind, formula=formula)
+    result["source"] = {"formula": formula_references(result["content"]), "rangeLinks": links}
     result["status"] = "observed" if all(
         result[key]["status"] == "observed" for key in ("content", "calculated", "nativeFormat")
     ) else "partial"
     result["observedAt"] = datetime.now(timezone.utc).isoformat()
-    result["warnings"].append("Repeated cell reads, not an atomic snapshot. Reinspect after edits; report correctness is not assessed.")
+    result["warnings"].append("Not an atomic snapshot of cells and links. Report correctness is not assessed.")
     return result

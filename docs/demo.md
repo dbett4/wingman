@@ -9,11 +9,18 @@ In an Amp orb, use `amp orb services ensure` and its Wingman demo portal.
 1. **Inspect.** The panel opens without a scan. Select B7 and choose **Inspect
    selected cell**: stored formula `=SUM(B3:B6)+12500`, seeded result `3746500`,
    and native ACCOUNTING format appear separately. Try C8 (zero) and B1 (blank).
-   The inspector makes no edits and does not claim to trace sources or apply a
-   client policy. Changing the cell, sheet, or workbook clears its evidence.
-2. **Scan.** Open Scan and click **Scan** for Statement of activities. The six findings
-   include three safe fixes, two formula/reference review items, and a zero-display
-   convention review item. The latter is a heuristic, not a proven accounting error.
+   Expand **References & links** for B7's `B3:B6` reference, `12500` numeric literal,
+   and containing source range `B3:C7`. B8 keeps `#REF!` unresolved. On Review notes,
+   inspect B2: no formula, but a destination link from `C5:D8` at a fictional
+   published revision. Expand the link for its IDs and revision.
+   The inspector makes no edits, does not verify referenced values, and applies
+   no client policy. Changing the cell, sheet, or workbook clears its evidence.
+2. **Scan.** Open Scan and click **Scan** for Statement of activities. The seven findings
+   include three safe fixes, three formula/reference review items, and a zero-display
+   convention review item. The existing source-formula detector flags B7 because
+   it is a formula in a range-link source; the fixture establishes no policy that
+   makes this wrong. Inspect does not inherit that judgment. These review items
+   are heuristics, not proven accounting errors.
 3. **Review B2.** The grid shows `2,025`; the formula bar shows stored value `2025`.
    The year detector proposes PERIOD formatting. C2 is already PERIOD and is not
    flagged. Amounts below it must not cause competing accounting-format fixes.
@@ -40,13 +47,14 @@ to update them. Packet download always runs a fresh workbook scan.
 | Review UI | `wingman-core.js`, `wingman-inspector.js`, and `wingman-panel.js`; demo-only sizing and disabled live-only controls |
 | Browser transport | `demo/demo.js` substitutes same-origin fetch for Chrome background messaging and selection for debugger-driven navigation |
 | Service | `app.Handler` inspect, scan, preview, apply, and packet routes; demo wrapper restricts accessible routes |
-| Inspect path | Metadata lookup and two pairs of single-cell sheetdata/content HTTP reads; no detectors or writes |
+| Inspect path | Metadata lookup, two pairs of single-cell sheetdata/content HTTP reads, formula tokenization, table range links, and revision-specific source-range lookup; no detectors or writes |
 | Read/scan path | Real HTTP client, two-page sheetdata reads, formula/type enrichment, detectors, grouping, diagnosis |
 | Fix path | Real fixer and account/workbook gates, using a synthetic identity and a fictional-only allowlist |
 | Upstream | In-memory HTTP simulator supporting only the fixture's endpoints; seeded formula results, immediate writes |
 | Fault injection | One incorrect value/format write, followed by a successful restore request |
 
-Not simulated: actual Workiva DOM changes, OAuth, live range links, rate limits,
+Only the fixture's source/destination range-link metadata is simulated; no source
+values or destination updates propagate. Not simulated: actual Workiva DOM changes, OAuth, live range links, rate limits,
 eventual consistency, async operation jobs, collaborative edits, process-crash
 recovery, rich-text editing, vision, external checks, publishing, or PDF proof.
 The demo is **not evidence of live integration compatibility or measured accuracy**.

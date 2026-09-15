@@ -72,7 +72,7 @@
     page.appendChild(button);
     var feedback = el("p", "wi-description");
     feedback.setAttribute("role", "status");
-    feedback.textContent = state.error || (state.loading ? "Reading only " + target.addr + ". No workbook scan or changes."
+    feedback.textContent = state.error || (state.loading ? "Reading " + target.addr + " and its link metadata. No workbook scan or changes."
       : data && data.status === "unavailable" ? "No cell evidence returned. Inspect again to retry."
       : data && data.status === "changed" ? "Cell changed while reading. Inspect again."
       : data ? "Read at " + new Date(data.observedAt).toLocaleTimeString() + ". Inspect again after edits."
@@ -94,14 +94,77 @@
         row(evidence, "Native format", formatText(data.nativeFormat));
         page.appendChild(evidence);
         var explanations = {
-          formula: "This cell contains a formula. Its references and accounting meaning have not been verified.",
+          formula: "",
           number: "This cell stores a number. Without its source policy, Wingman cannot say whether it should be a formula or an approved frozen value.",
           text: "This cell stores text. No formatting change is proposed.",
           blank: "The stored content is blank. This alone does not establish a broken link.",
           boolean: "This cell stores a boolean value, not a financial amount.",
         };
-        page.appendChild(el("p", "wi-description", explanations[data.content && data.content.kind]
-          || "Stored content could not be classified. No hardcode or formula judgment is made."));
+        var explanation = explanations[data.content && data.content.kind];
+        if (explanation === undefined) explanation = "Stored content could not be classified. No hardcode or formula judgment is made.";
+        if (explanation) page.appendChild(el("p", "wi-description", explanation));
+      }
+      if (data.content || data.calculated) {
+        var sources = el("details", "wi-sources wi-details");
+        sources.setAttribute("aria-label", "References and links");
+        var source = data.source || {}, formula = source.formula || {}, links = source.rangeLinks || {};
+        var items = links.items || [];
+        var sourceSummary = el("summary", null, "References & links");
+        var formulaSummary = formula.status === "text_only"
+          ? formula.references.length + " formula address" + (formula.references.length === 1 ? "" : "es")
+          : formula.status === "not_formula" ? "No formula" : "Formula unavailable";
+        var linkSummary = links.status === "observed"
+          ? (items.some(function (link) { return link.direction === "destination"; }) ? "Linked table"
+            : items.length ? "Range-link source" : "No covering range link")
+          : links.status === "partial" ? "Link list incomplete"
+          : links.status === "unavailable" ? "Links unavailable" : "Links not inspected";
+        if (formula.unresolved && formula.unresolved.length) formulaSummary += " · unresolved notation";
+        if (items.some(function (link) { return link.direction === "destination" && link.resolution !== "observed"; })) {
+          linkSummary += " · source unresolved";
+        }
+        sourceSummary.appendChild(el("span", "wi-source-summary", formulaSummary + " · " + linkSummary));
+        sources.appendChild(sourceSummary);
+        var refs = el("dl", "wi-evidence");
+        if (formula.status === "text_only") {
+          row(refs, "Addresses in formula", formula.references.join("\n") || "No supported static references extracted", true);
+          if (formula.literalNumbers.length) row(refs, "Literal numbers", formula.literalNumbers.join(" · "), true);
+          if (formula.unresolved.length) row(refs, "Not resolved", formula.unresolved.join("\n"), true);
+          sources.appendChild(refs);
+          sources.appendChild(el("p", "wi-description", "Formula text only. Referenced cells were not read; literal numbers are not automatically errors."));
+        } else {
+          sources.appendChild(el("p", "wi-description", formula.status === "not_formula"
+            ? "No stored formula. Workiva links are checked separately."
+            : "Formula references could not be inspected."));
+        }
+        var linkStatus = links.status === "observed"
+          ? (items.length ? "Range-link metadata read for this cell." : "No range link covers this cell in the returned table metadata.")
+          : links.status === "partial" ? "Range-link list incomplete. Only the evidence below was returned."
+          : links.status === "unavailable" ? "Range links unavailable. This does not mean the cell is unlinked."
+          : "Range links not inspected.";
+        sources.appendChild(el("p", links.status === "partial" || links.status === "unavailable" ? "wi-warning" : "wi-description", linkStatus));
+        items.forEach(function (link) {
+          var linkDetail = el("details", "wi-details wi-link");
+          var incoming = link.direction === "destination";
+          linkDetail.appendChild(el("summary", null, incoming
+            ? "Linked from " + (link.sourceRange || "an unresolved source range")
+            : "Source range " + link.range + " includes this cell"));
+          var fields = el("dl", "wi-evidence");
+          row(fields, "Range-link ID", link.id, true);
+          if (incoming) {
+            row(fields, "Source table ID", link.source.table, true);
+            row(fields, "Source range-link ID", link.source.rangeLink, true);
+            row(fields, "Reported source revision", link.source.revision, true);
+            row(fields, "Source range lookup", link.resolution === "observed"
+              ? "Read at the reported revision; source values not read"
+              : "Not available at the reported revision; no latest-revision substitute");
+          } else {
+            row(fields, "Last published revision", link.revision || "Not provided", true);
+          }
+          linkDetail.appendChild(fields);
+          sources.appendChild(linkDetail);
+        });
+        sources.appendChild(el("p", "wi-description", "Range links only, not cell-level links or a full source chain. Link metadata is not proof that reports are up to date."));
+        page.appendChild(sources);
       }
       (data.warnings || []).forEach(function (warning) {
         page.appendChild(el("p", "wi-warning", warning));
@@ -118,7 +181,7 @@
       detail.appendChild(el("p", "wi-description", "Page identity is not proof of client, fiscal period, or working-copy authority. Rendered document text is not inspected."));
     }
     var scope = el("dl", "wi-scope");
-    row(scope, "Source lineage", "Not traced");
+    row(scope, "Full source chain", "Not traced");
     row(scope, "Source policy", "Not connected");
     row(scope, "Downstream reports", "Not inspected");
     page.appendChild(scope);
@@ -131,8 +194,9 @@
     ".wi-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.wi-eyebrow{font-size:10px;letter-spacing:.09em;color:var(--muted);font-weight:600}.wi-readonly{font-size:11px;color:var(--muted)}" +
     ".wi-address{font-size:32px;line-height:1.15;font-weight:500;letter-spacing:-.04em;margin:10px 0 4px}.wi-sheet{margin:0 0 14px;color:var(--muted)}" +
     ".wi-inspect{min-height:40px;width:100%}.wi-inspect:disabled{opacity:.65;cursor:wait}.wi-description{color:var(--muted);font-size:12px;line-height:1.55;margin:10px 0 12px}" +
-    ".wi-evidence,.wi-scope{margin:0}.wi-row{padding:8px 0;border-top:1px solid var(--border-soft)}.wi-row dt{font-size:11px;color:var(--muted);margin-bottom:4px}.wi-row dd{margin:0;font-size:13px}.wi-row code{font:12px/1.6 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere}" +
+    ".wi-evidence,.wi-scope{margin:0}.wi-row{padding:5px 0;border-top:1px solid var(--border-soft)}.wi-row dt{font-size:11px;color:var(--muted);margin-bottom:4px}.wi-row dd{margin:0;font-size:13px}.wi-row code{font:12px/1.6 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere}" +
     ".wi-warning{font-size:12px;line-height:1.55;color:var(--muted);border-left:2px solid var(--warn);padding-left:10px;margin:12px 0}.wi-details{margin:8px 0 0}.wi-details summary{min-height:40px;cursor:pointer;display:list-item;padding:10px 0;color:var(--accent-text)}" +
+    ".wi-sources{margin:8px 0;border-top:1px solid var(--border-soft);border-bottom:1px solid var(--border-soft)}.wi-sources>summary{font-size:13px;line-height:1.5}.wi-source-summary{display:block;font-size:11px;color:var(--muted);margin-top:4px}.wi-link{border-top:1px solid var(--border-soft)}.wi-link summary{font-size:12px;line-height:1.5}" +
     ".wi-details summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.wi-scope .wi-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:6px 0}.wi-scope dt{margin:0}.wi-scope dd{font-size:12px;color:var(--muted)}" +
     ".wm-panel.wi-mode .wm-tab-actions,.wm-panel.wi-mode .wm-ctx,.wm-panel.wi-mode .wm-operator-warnings,.wm-panel.wi-mode .wm-thermo,.wm-panel.wi-mode .wm-preset{display:none!important}" +
     ".wm-panel.wi-mode{max-width:calc(100vw - 28px)}.wm-panel.wi-mode .wm-tab{min-height:40px}.wm-panel.wi-mode .wm-head .wm-x{min-height:32px;min-width:32px}.wm-panel.wi-mode .wm-reset-size,.wm-panel.wi-mode .wm-wide-toggle{display:none}";

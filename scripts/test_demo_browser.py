@@ -54,7 +54,7 @@ def test_browser_workflow(demo_url):
         run("wait", "--fn", ready + f" && {root}.querySelector('.wi-address')?.textContent === 'B2'")
         check("document.getElementById('request-count').textContent === '0 simulated API requests'")
         scan()
-        run("wait", "--fn", ready + f" && {root}.querySelectorAll('.wm-grp').length === 6")
+        run("wait", "--fn", ready + f" && {root}.querySelectorAll('.wm-grp').length === 7")
         check(f"{root}.querySelector('.wm-fixall').textContent === 'Fix all 3 safe'")
         check(f"{root}.querySelector('[data-tab=checks]').disabled")
         run("set", "viewport", "390", "844", "2")
@@ -71,7 +71,7 @@ def test_browser_workflow(demo_url):
         run("click", "#reset")
         run("wait", "--fn", ready + f" && !!{root}.querySelector('.wi-inspector')")
         scan()
-        run("wait", "--fn", ready + f" && {root}.querySelectorAll('.wm-grp').length === 6")
+        run("wait", "--fn", ready + f" && {root}.querySelectorAll('.wm-grp').length === 7")
         run("click", "#failure")
         run("wait", "--fn", ready + " && document.getElementById('failure').getAttribute('aria-pressed') === 'true'")
         preview_label()
@@ -134,15 +134,38 @@ def test_inspector_evidence_and_navigation(demo_url):
         run("set", "viewport", "1280", "900", "2")
         run("wait", "--fn", f"!!{root}.querySelector('.wi-inspect') && {ready}")
         check("document.getElementById('request-count').textContent === '0 simulated API requests'")
-        for addr, text in [("B7", "=SUM(B3:B6)+12500"), ("C8", "0"), ("B1", "(blank)")]:
+        for addr, text in [("B7", "=SUM(B3:B6)+12500"), ("C8", "0"), ("B8", "=#REF!"), ("B1", "(blank)")]:
             run("click", f'#grid [data-addr="{addr}"] button')
             run("wait", "--fn", f"{root}.querySelector('.wi-address').textContent === '{addr}'")
             check(f"!{root}.querySelector('.wi-evidence')")
             click(".wi-inspect")
             run("wait", "--fn", ready + f" && !!{root}.querySelector('.wi-evidence')")
             check(f"{root}.querySelector('.wi-evidence dd').textContent === {text!r}")
+            check(f"!{root}.querySelector('.wi-sources').open")
+            click(".wi-sources > summary")
+            check(f"{root}.querySelector('.wi-sources').open")
+            if addr == "B7":
+                check(f"{root}.querySelector('.wi-sources .wi-evidence').textContent === 'Addresses in formulaB3:B6Literal numbers12500'")
+                check(f"{root}.querySelector('.wi-link summary').textContent === 'Source range B3:C7 includes this cell'")
+            elif addr == "B8":
+                check(f"{root}.querySelector('.wi-sources').textContent.includes('Not resolved#REF!')")
+            else:
+                check(f"{root}.querySelector('.wi-sources').textContent.includes('No range link covers this cell')")
         check("document.querySelectorAll('.trace-row').length === 0")
-        check("document.getElementById('request-count').textContent === '15 simulated API requests'")
+        check("document.getElementById('request-count').textContent === '24 simulated API requests'")
+        run("find", "role", "button", "click", "--name", "Review notes", "--exact")
+        run("wait", "--fn", f"{root}.querySelector('.wi-address').textContent === 'B2'")
+        click(".wi-inspect")
+        run("wait", "--fn", ready + f" && !!{root}.querySelector('.wi-link')")
+        click(".wi-sources > summary")
+        check(f"{root}.querySelector('.wi-link summary').textContent === 'Linked from C5:D8'")
+        run("eval", f"{root}.querySelector('.wi-link summary').focus()")
+        run("press", "Enter")
+        check(f"{root}.querySelector('.wi-link').open && {root}.querySelector('.wi-link').textContent.includes('demo-published-3')")
+        check(f"{root}.querySelector('.wi-sources').textContent.includes('No stored formula')")
+        run("find", "role", "button", "click", "--name", "Statement of activities", "--exact")
+        run("click", '#grid [data-addr="B1"] button')
+        run("wait", "--fn", f"{root}.querySelector('.wi-address').textContent === 'B1'")
         check(f"{root}.querySelector('.wi-scope').textContent.includes('Not connected')")
         run("eval", f"{root}.querySelector('[data-tab=inspect]').focus()")
         for key, tab in [("ArrowRight", "scan"), ("ArrowRight", "workbook"), ("Home", "inspect")]:
@@ -159,12 +182,12 @@ def test_inspector_evidence_and_navigation(demo_url):
             if (msg.path?.startsWith('/api/inspect') || msg.path?.startsWith('/api/queue')) pending.push({msg, cb});
             else savedSend(msg, cb);
           };
-          window.answer = (entry, value) => {
+          window.answer = (entry, value, source) => {
             var q = new URL(entry.msg.path, location.origin).searchParams;
             entry.cb({ok:true, data:{target:Object.fromEntries(q), readOnly:true, status:'observed',
               observedAt:new Date().toISOString(), sheetName:'Synthetic reply',
               content:{status:'observed', kind:'number', value}, calculated:{status:'observed', value},
-              nativeFormat:{status:'observed', value:{valueFormatType:'NUMBER'}}, warnings:[]}});
+              nativeFormat:{status:'observed', value:{valueFormatType:'NUMBER'}}, source, warnings:[]}});
           };
         })()""")
         click(".wi-inspect")
@@ -215,6 +238,20 @@ def test_inspector_evidence_and_navigation(demo_url):
         run("eval", "answer(pending.shift(), '<img src=x onerror=alert(1)>')")
         check(f"!{root}.querySelector('.wi-evidence img')")
         check(f"{root}.querySelector('.wi-evidence dd').textContent === '<img src=x onerror=alert(1)>'")
+
+        # Cell success must not hide link failure, even with the details collapsed.
+        for status, label in [("unavailable", "Links unavailable"), ("partial", "Link list incomplete")]:
+            click(".wi-inspect")
+            run("eval", f"answer(pending.shift(), 42, {{rangeLinks:{{status:{status!r},items:[]}}}})")
+            check(f"{root}.querySelector('.wi-source-summary').textContent.includes({label!r})")
+            check(f"!{root}.querySelector('.wi-sources').textContent.includes('No range link covers')")
+        click(".wi-inspect")
+        run("eval", "answer(pending.shift(), 42, {rangeLinks:{status:'observed',items:[{direction:'destination',id:'<img src=x>',source:{table:'<script>',rangeLink:'source',revision:'old-revision'},resolution:'unavailable'}]}})")
+        check(f"{root}.querySelector('.wi-source-summary').textContent.includes('source unresolved')")
+        click(".wi-sources > summary")
+        click(".wi-link summary")
+        check(f"{root}.querySelector('.wi-link').textContent.includes('old-revision')")
+        check(f"!{root}.querySelector('.wi-sources img, .wi-sources script')")
 
         run("eval", "document.getElementById('address').textContent = 'B1:C8'")
         run("wait", "--fn", f"{root}.querySelector('.wi-inspector').textContent.includes('not a range')")

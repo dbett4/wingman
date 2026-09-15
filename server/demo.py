@@ -102,11 +102,16 @@ class Workbook:
         if method == "GET" and path == f"/spreadsheets/{WORKBOOK}/sheets":
             return {"data": [{"id": s["id"], "name": s["name"], "table": {"table": s["id"]}}
                              for s in self.sheets]}
+        if method == "GET":
+            for link in FIXTURE["publishedRangeLinks"]:
+                if (path == f"/content/tables/{link['table']}/rangeLinks/{link['id']}"
+                        and query.get("$revision") == [link["revision"]]):
+                    return copy.deepcopy(link)
         content = re.fullmatch(r"/content/tables/(de0[12])/(cells|rangeLinks)", path)
         if method == "GET" and content:
             sheet = self.sheet(content[1])
             if content[2] == "rangeLinks":
-                return {"data": []}
+                return {"data": copy.deepcopy(sheet["rangeLinks"])}
             r0, r1, c0, c1 = [int(query[k][0]) for k in ("startRow", "stopRow", "startColumn", "stopColumn")]
             result = []
             for ri in range(r0, r1 + 1):

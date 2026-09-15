@@ -44,7 +44,7 @@ detector-accuracy benchmark**. Formula results are seeded, and external checks,
 vision, publishing, OAuth, async jobs, and collaborative edits are not simulated.
 See the [two-minute walkthrough and simulation boundary](docs/demo.md).
 
-## Selected-cell inspector — first revamp slice
+## Selected-cell inspector
 
 On first use, Wingman opens on **Inspect**, without reading the workbook or starting a scan.
 Select one spreadsheet cell and choose **Inspect selected cell** to see stored
@@ -57,8 +57,16 @@ selection or page context changes and rejects late replies for earlier selection
 The service repeats both cell reads and discards changed evidence; this is **not
 an atomic or revision-pinned snapshot**. Inspect again after edits.
 
-Source tracing, engagement policy, document comments, and downstream report checks
-are not connected. Page IDs do not prove client, fiscal year, or working-copy
+**References & links** separates addresses and numeric literals in the formula
+from Workiva range-link metadata. Formula extraction is text-only, not evaluation
+or verification of referenced cells. Named, external, structured, and computed
+references remain unresolved. Range links distinguish sources from destinations;
+destination source ranges are looked up at the reported source revision, never
+silently substituted with the latest revision. Failed or incomplete link reads
+do not become “unlinked.” Cell-level links and multi-hop source chains are not traced.
+
+Engagement policy, document comments, and downstream report checks are not
+connected. Page IDs do not prove client, fiscal year, or working-copy
 authority. Existing Scan, Checks, and Workbook workflows remain separate and
 manual. Live Workiva compatibility and the browser-to-service connection still
 require validation; this slice does not change the localhost service architecture.

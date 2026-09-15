@@ -33,11 +33,19 @@ def test_http_exact_cell_without_mutation(browser, addr, kind, formula, calculat
     if kind == "number":
         assert data["content"]["value"] == calculated
         assert data["nativeFormat"]["status"] == "observed"
-    assert data["source"] == {"status": "not_traced"}
+    formula_source = data["source"]["formula"]
+    if addr == "B7":
+        assert formula_source == {"status": "text_only", "references": ["B3:B6"],
+                                  "literalNumbers": ["12500"], "unresolved": []}
+        assert data["source"]["rangeLinks"]["items"][0]["range"] == "B3:C7"
+    else:
+        assert data["source"]["rangeLinks"] == {"status": "observed", "items": []}
+        assert formula_source == ({"status": "text_only", "references": [], "literalNumbers": [], "unresolved": ["#REF!"]}
+                                  if addr == "B8" else {"status": "not_formula"})
     assert data["policy"] == {"status": "not_connected"}
     assert data["downstream"] == {"status": "not_inspected"}
     after = browser.state()
-    assert after["requestCount"] - before["requestCount"] == 5  # metadata + two exact read pairs
+    assert after["requestCount"] - before["requestCount"] == 6  # metadata + links + two exact read pairs
     assert after["sheets"] == before["sheets"]
     assert after["events"] == before["events"] == []
     assert after["failureArmed"] == before["failureArmed"] is False
@@ -51,6 +59,22 @@ def test_foreign_sheet_has_no_cell_evidence(browser):
     assert browser.state()["events"] == []
 
 
+def test_http_linked_constant_is_not_an_unlinked_hardcode(browser):
+    before = browser.state()
+    data = browser.request("/api/inspect?spreadsheetId=de00&sheetId=de02&addr=B2")
+    assert data["content"]["value"] == 2025
+    assert data["source"]["formula"] == {"status": "not_formula"}
+    links = data["source"]["rangeLinks"]
+    assert links["status"] == "observed"
+    assert links["items"] == [{
+        "direction": "destination", "id": "demo-notes-destination", "resolution": "observed", "sourceRange": "C5:D8",
+        "source": {"table": "demo-notes-table", "rangeLink": "demo-notes-source", "revision": "demo-published-3"},
+    }]
+    after = browser.state()
+    assert after["requestCount"] - before["requestCount"] == 7
+    assert after["sheets"] == before["sheets"] and after["events"] == []
+
+
 @pytest.fixture
 def transport(monkeypatch):
     """Fixed asymmetric C12 target; no live OAuth, scan, write, or network calls."""
@@ -61,7 +85,7 @@ def transport(monkeypatch):
     }]]}}
     content = {"data": [{"cells": [{"value": {"type": "formula", "formula": "=6*7"}}]}]}
     responses = {"meta": [meta], "native": [native, copy.deepcopy(native)],
-                 "content": [content, copy.deepcopy(content)]}
+                 "content": [content, copy.deepcopy(content)], "links": [{"data": []}]}
     calls = []
 
     def read(path, token, ctx, version=None):
@@ -73,6 +97,9 @@ def transport(monkeypatch):
         elif path.startswith("/platform/v1/spreadsheets/book-a/sheets/sheet-b/sheetdata?"):
             key = "native"
             assert parse_qs(urlsplit(path).query) == {"$cellrange": ["C12:C12"], "$maxcellsperpage": ["1"]}
+        elif path == "/content/tables/table-c/rangeLinks":
+            key = "links"
+            assert version == "2026-01-01"
         else:
             assert path == "/content/tables/table-c/cells?startRow=11&stopRow=11&startColumn=2&stopColumn=2"
             key = "content"
@@ -114,6 +141,7 @@ def test_change_discards_all_evidence_including_same_result_formula(transport, e
     data = inspect()
     assert data["status"] == "changed"
     assert not {"content", "calculated", "nativeFormat"} & data.keys()
+    assert data["source"] == {"formula": {"status": "not_inspected"}, "rangeLinks": {"status": "not_inspected"}}
 
 
 def test_change_from_zero_to_false_is_not_equal_evidence(transport):
@@ -181,4 +209,14 @@ def test_metadata_pagination_resolves_requested_sheet(transport):
     responses["meta"].insert(0, {"data": [{"id": "other-sheet"}],
                                  "@nextLink": "/spreadsheets/book-a/sheets?page=2"})
     assert inspect()["content"]["formula"] == "=6*7"
-    assert len(calls) == 6
+    assert len(calls) == 7
+
+
+def test_link_failure_preserves_cell_evidence_without_claiming_absence(transport):
+    responses, _ = transport
+    responses["links"] = [PermissionError("sensitive upstream body")]
+    data = inspect()
+    assert data["status"] == "observed"  # Cell evidence is independently available.
+    assert data["content"]["formula"] == "=6*7"
+    assert data["source"]["rangeLinks"] == {"status": "unavailable", "items": []}
+    assert "sensitive" not in json.dumps(data)

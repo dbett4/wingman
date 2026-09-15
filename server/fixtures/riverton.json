@@ -21,7 +21,11 @@
         "B2": {"valueFormat": {"valueFormatType": "AUTOMATIC"}},
         "C2": {"valueFormat": {"valueFormatType": "PERIOD"}},
         "A5": {"textFormat": {"fontColor": "#AAAAAA"}}
-      }
+      },
+      "rangeLinks": [{
+        "id": "demo-revenue-source", "table": "de01", "type": "source", "revision": "demo-published-1",
+        "source": {"range": {"startRow": 2, "stopRow": 6, "startColumn": 1, "stopColumn": 2}}
+      }]
     },
     {
       "id": "de02",
@@ -33,7 +37,19 @@
         ["Scope", "Fictional demonstration only"]
       ],
       "formulas": {},
-      "formats": {"B2": {"valueFormat": {"valueFormatType": "PERIOD"}}}
+      "formats": {"B2": {"valueFormat": {"valueFormatType": "PERIOD"}}},
+      "rangeLinks": [{
+        "id": "demo-notes-destination", "table": "de02", "type": "destination", "revision": "demo-local-2",
+        "destination": {"source": {
+          "table": "demo-notes-table", "rangeLink": "demo-notes-source", "revision": "demo-published-3"
+        }}
+      }]
+    }
+  ],
+  "publishedRangeLinks": [
+    {
+      "id": "demo-notes-source", "table": "demo-notes-table", "type": "source", "revision": "demo-published-3",
+      "source": {"range": {"startRow": 4, "stopRow": 7, "startColumn": 2, "stopColumn": 3}}
     }
   ]
 }

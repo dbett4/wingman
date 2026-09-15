@@ -98,6 +98,7 @@ def test_real_scan_pages_and_does_not_propose_competing_year_fixes(browser):
     assert actual == {
         ("broken-ref", ("B8",), "surfaced"),
         ("hardcoded-constant-in-formula", ("B7",), "surfaced"),
+        ("dl-source-numeric-formula", ("B7",), "surfaced"),
         ("low-contrast", ("A5",), "safe-auto"),
         ("year-automatic-coercion", ("B2",), "safe-auto"),
         ("label-hygiene", ("A4",), "safe-auto"),
