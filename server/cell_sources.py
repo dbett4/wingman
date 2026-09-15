@@ -167,6 +167,60 @@ def range_links(table_id, addr, token, ctx):
     return {"status": "observed", "items": items}
 
 
+def cell_link(content, table_id, token, ctx):
+    """Follow a CellDestinationLinkValue to its recorded source, never range offsets.
+
+    Contract: content-links-guide.html, getdestinationlinkbyid.html and
+    gettableanchorbyid.html in Workiva's 2026-01-01 documentation.
+    This does not enumerate inline rich-text links or source-link destinations.
+    """
+    result = {"status": "unavailable", "resolution": "unavailable"}
+    try:
+        value = content["data"][0]["cells"][0]["value"]
+        if not isinstance(value, dict) or value.get("type") != "destinationLink":
+            return {"status": "not_present"}
+        ref = value["destinationLink"]["destinationLink"]
+        identity, revision = _identity(ref["destinationLink"]), _identity(ref["revision"])
+        result.update(id=identity, revision=revision)
+        raw = wk._get(f"/content/destinationLinks/{quote(identity, safe='')}?{urlencode({'$revision': revision})}",
+                      token, ctx, version="2026-01-01")
+        if (raw["id"] != identity or raw["revision"] != revision
+                or raw["content"]["type"] != "table" or raw["content"]["table"] != table_id
+                or raw["status"] not in ("connected", "disconnected")):
+            raise ValueError("Destination identity, revision or status mismatch")
+        result.update(status="observed", linkState=raw["status"])
+        if raw["status"] == "disconnected":
+            result.update(resolution="disconnected", reason="A disconnected link can retain its last published value. No source was followed.")
+            return result
+        source = raw["source"]
+        if source["type"] != "anchor":
+            result.update(resolution="unsupported", reason="Workiva did not identify a supported source anchor.")
+            return result
+        anchor = source["anchor"]
+        source_type = anchor["content"]["type"]
+        result["source"] = {"type": source_type, "anchor": _identity(anchor["anchor"]),
+                            "revision": _identity(anchor["revision"])}
+        if source_type != "table":
+            result.update(resolution="unsupported", reason="Non-table source content is not read by this inspector.")
+            return result
+        source_table = _identity(anchor["content"]["table"])
+        result["source"]["table"] = source_table
+        raw_anchor = wk._get(
+            f"/content/tables/{quote(source_table, safe='')}/anchors/{quote(anchor['anchor'], safe='')}"
+            f"?{urlencode({'$revision': anchor['revision']})}", token, ctx, version="2026-01-01")
+        if (raw_anchor["id"] != anchor["anchor"] or raw_anchor["revision"] != anchor["revision"]
+                or raw_anchor["content"]["type"] != "table" or raw_anchor["content"]["table"] != source_table
+                or raw_anchor["attachmentPoint"]["type"] != "tableRange"):
+            raise ValueError("Source anchor identity or revision mismatch")
+        bounds = _bounds(raw_anchor["attachmentPoint"])
+        if bounds[0] != bounds[1] or bounds[2] != bounds[3]:
+            raise ValueError("Cell source anchor is not a single cell")
+        result.update(resolution="observed", sourceCell=_range_text(bounds))
+    except Exception:
+        result["reason"] = "Cell link or source anchor unavailable at its recorded revision; no latest-revision substitute."
+    return result
+
+
 def stored_content(cell):
     """Keep raw content separate from formatted/computed strings and numeric types."""
     value = cell["value"]
@@ -239,11 +293,16 @@ def _named_table(spreadsheet_id, name, revision, token, ctx):
     raise ValueError("Sheet metadata incomplete")
 
 
-def source_values(spreadsheet_id, table_id, revision, formula, links, token, ctx):
+def source_values(spreadsheet_id, table_id, revision, formula, links, token, ctx, *, linked_cell=None):
     """Opt-in direct evidence only: 100 cells across at most 10 range reads."""
     groups, used_cells, used_ranges = [], 0, 0
     candidates = [{"reference": ref, "basis": "selected_revision", "revision": revision,
                    "tableId": table_id} for ref in formula.get("references", [])]
+    if linked_cell and linked_cell.get("status") != "not_present":
+        source = linked_cell.get("source", {})
+        candidates.insert(0, {"reference": linked_cell.get("sourceCell"), "basis": "cell_link_revision",
+                              "revision": source.get("revision"), "tableId": source.get("table"),
+                              "reason": linked_cell.get("reason", "Cell-link source is unresolved; no values read.")})
     for link in links.get("items", []):
         if link["direction"] == "destination":
             candidates.append({"reference": link.get("sourceRange"), "basis": "published_revision",
@@ -253,7 +312,7 @@ def source_values(spreadsheet_id, table_id, revision, formula, links, token, ctx
         groups.append(group)
         reference = candidate["reference"]
         if not reference:
-            group["reason"] = "Source range is unresolved; no values read."
+            group["reason"] = candidate.get("reason", "Source range is unresolved; no values read.")
             continue
         address = reference.rsplit("!", 1)[-1]
         try:
@@ -292,6 +351,7 @@ def source_values(spreadsheet_id, table_id, revision, formula, links, token, ctx
                                   {"status": "unavailable"})
                     cells.append({"addr": wk.a1(r0 + ri, c0 + ci), "content": content, "calculated": calculated})
             group.update(status="observed", name=props.get("name"), range=_range_text(bounds), cells=cells)
+            group.pop("reason", None)
         except Exception:
             group["reason"] = "Source could not be read at this revision; no latest-revision substitute."
     incomplete = (formula.get("status") == "unavailable" or bool(formula.get("unresolved"))

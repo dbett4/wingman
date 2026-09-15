@@ -12,7 +12,7 @@ import re
 from urllib.parse import urlsplit
 
 import wk_client as wk
-from cell_sources import formula_references, range_links, read_cells, source_values, stored_content
+from cell_sources import cell_link, formula_references, range_links, read_cells, source_values, stored_content
 
 
 def validate_target(spreadsheet_id, sheet_id, addr):
@@ -96,11 +96,13 @@ def inspect_cell(spreadsheet_id, sheet_id, addr, token, ctx, *, include_sources=
     links = range_links(table_id, addr, token, ctx) if cell["status"] == "observed" else {"status": "not_inspected"}
     decoded = (stored_content(content["value"]["data"][0]["cells"][0])
                if content["status"] == "observed" else {"status": "unavailable"})
+    linked_cell = (cell_link(content["value"], table_id, token, ctx)
+                   if content["status"] == cell["status"] == "observed" else {"status": "unavailable"})
     formula = formula_references(decoded)
     values = None
     if include_sources and cell["status"] == content["status"] == "observed":
         revision = content["value"]["revision"]
-        values = source_values(spreadsheet_id, table_id, revision, formula, links, token, ctx)
+        values = source_values(spreadsheet_id, table_id, revision, formula, links, token, ctx, linked_cell=linked_cell)
     cell_after, content_after = _observe(read_cell), _observe(read_content)
     # Python equality equates False with 0; native content types must remain distinct.
     if any(before["status"] == after["status"] == "observed"
@@ -126,6 +128,7 @@ def inspect_cell(spreadsheet_id, sheet_id, addr, token, ctx, *, include_sources=
         result["content"] = decoded
         result["contentRevision"] = content["value"]["revision"]
     result["source"] = {"formula": formula_references(result["content"]), "rangeLinks": links}
+    result["source"]["cellLink"] = linked_cell if result["content"]["status"] == "observed" else {"status": "unavailable"}
     if values is not None and content["status"] == content_after["status"] == "observed":
         result["source"]["values"] = values
     result["status"] = "observed" if all(

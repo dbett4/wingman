@@ -271,3 +271,123 @@ def test_missing_formula_text_is_unknown_not_a_nonformula():
     content = sources.stored_content({"value": {"type": "formula", "formula": {"calculatedValue": "42"}}})
     assert content["kind"] == "unknown"
     assert sources.formula_references(content) == {"status": "unavailable"}
+
+
+def linked_content():
+    return {"revision": "origin-9", "data": [{"cells": [{"rawValue": "1234", "value": {
+        "type": "destinationLink", "destinationLink": {"destinationLink": {
+            "destinationLink": "cell-link", "revision": "link-4"}, "paragraphs": []}}}]}]}
+
+
+def cell_destination():
+    return {"id": "cell-link", "revision": "link-4", "status": "connected",
+            "content": {"type": "table", "table": "table-c"}, "source": {"type": "anchor", "anchor": {
+                "anchor": "source-anchor", "revision": "source-3", "content": {"type": "table", "table": "upstream-table"}}}}
+
+
+def cell_anchor():
+    return {"id": "source-anchor", "revision": "source-3", "content": {"type": "table", "table": "upstream-table"},
+            "attachmentPoint": {"type": "tableRange", "range": {
+                "startRow": 10, "stopRow": 10, "startColumn": 4, "stopColumn": 4}}}
+
+
+def trace_cell():
+    return sources.cell_link(linked_content(), "table-c", "synthetic-token", None)
+
+
+def test_cell_link_follows_ids_and_each_recorded_revision_not_range_offsets(transport):
+    responses, calls = transport
+    responses.extend([cell_destination(), cell_anchor()])
+    link = trace_cell()
+    assert link == {"status": "observed", "resolution": "observed", "linkState": "connected",
+                    "id": "cell-link", "revision": "link-4", "sourceCell": "E11",
+                    "source": {"type": "table", "table": "upstream-table", "anchor": "source-anchor", "revision": "source-3"}}
+    assert calls == ["/content/destinationLinks/cell-link?%24revision=link-4",
+                     "/content/tables/upstream-table/anchors/source-anchor?%24revision=source-3"]
+    # No covering range link is needed to follow this individual cell's source.
+    responses.extend([properties("upstream-table", "source-3"), {"revision": "source-3",
+        "range": {"startRow": 10, "stopRow": 10, "startColumn": 4, "stopColumn": 4},
+        "data": [{"cells": [{"rawValue": "1200", "value": {"type": "plainText"}}]}]}])
+    values = sources.source_values("book-a", "table-c", "origin-9", {"status": "not_formula"},
+                                   {"status": "observed", "items": []}, "synthetic-token", None, linked_cell=link)
+    group, = values["groups"]
+    assert group["status"] == "observed" and group["basis"] == "cell_link_revision"
+    assert group["cells"][0]["addr"] == "E11" and group["cells"][0]["content"]["value"] == "1200"
+    assert parse_qs(urlsplit(calls[-1]).query) == {"$revision": ["source-3"],
+        "startRow": ["10"], "stopRow": ["10"], "startColumn": ["4"], "stopColumn": ["4"]}
+
+
+@pytest.mark.parametrize("range_count", [99, 100])
+def test_cell_link_and_covering_range_share_one_cell_budget(transport, range_count):
+    responses, calls = transport
+    responses.extend([properties("upstream-table", "source-3"), {"revision": "source-3",
+        "range": {"startRow": 10, "stopRow": 10, "startColumn": 4, "stopColumn": 4},
+        "data": [{"cells": [{"value": 1200}]}]},
+        properties("upstream-table", "published-5"), {"revision": "published-5",
+        "range": {"startRow": 0, "stopRow": range_count - 1, "startColumn": 0, "stopColumn": 0},
+        "data": [{"cells": [{"value": i}]} for i in range(range_count)]}])
+    linked = {"status": "observed", "resolution": "observed", "sourceCell": "E11",
+              "source": {"table": "upstream-table", "revision": "source-3"}}
+    links = {"status": "observed", "items": [{"direction": "destination", "sourceRange": f"A1:A{range_count}",
+             "source": {"table": "upstream-table", "revision": "published-5"}}]}
+    data = sources.source_values("book-a", "table-c", "origin-9", {"status": "not_formula"},
+                                 links, "synthetic-token", None, linked_cell=linked)
+    direct, covering = data["groups"]
+    assert direct["status"] == "observed" and direct["cells"][0]["content"]["value"] == 1200
+    assert covering["status"] == ("observed" if range_count == 99 else "limited")
+    assert sum(len(g.get("cells", [])) for g in data["groups"]) == (100 if range_count == 99 else 1)
+    assert len(calls) == (4 if range_count == 99 else 2)
+
+
+@pytest.mark.parametrize("fault", ["id", "revision", "table", "status", "denied"])
+def test_cell_destination_mismatch_or_denial_is_not_disconnection(transport, fault):
+    responses, calls = transport
+    dest = cell_destination()
+    if fault == "table": dest["content"]["table"] = "foreign-table"
+    elif fault == "denied": dest = PermissionError("sensitive upstream detail")
+    else: dest[fault] = "unexpected"
+    responses.append(dest)
+    data = trace_cell()
+    assert data["status"] == "unavailable" and "linkState" not in data and "sourceCell" not in data
+    assert data["revision"] == "link-4" and len(calls) == 1
+    assert "sensitive" not in json.dumps(data)
+
+
+@pytest.mark.parametrize("fault", ["id", "revision", "table", "type", "range", "denied"])
+def test_cell_anchor_failure_preserves_connected_status_not_a_false_source(transport, fault):
+    responses, calls = transport
+    anchor = cell_anchor()
+    if fault == "table": anchor["content"]["table"] = "foreign-table"
+    elif fault == "type": anchor["attachmentPoint"]["type"] = "richTextSelection"
+    elif fault == "range": anchor["attachmentPoint"]["range"]["stopColumn"] = 5
+    elif fault == "denied": anchor = PermissionError("sensitive upstream detail")
+    else: anchor[fault] = "unexpected"
+    responses.extend([cell_destination(), anchor])
+    data = trace_cell()
+    assert data["status"] == "observed" and data["linkState"] == "connected"
+    assert data["resolution"] == "unavailable" and "sourceCell" not in data
+    assert len(calls) == 2 and "sensitive" not in json.dumps(data)
+
+
+@pytest.mark.parametrize("state", ["disconnected", "richText", "unidentified"])
+def test_disconnected_and_unsupported_links_do_not_trigger_source_reads(transport, state):
+    responses, calls = transport
+    dest = cell_destination()
+    if state == "disconnected": dest["status"] = "disconnected"
+    elif state == "richText": dest["source"]["anchor"]["content"] = {"type": "richText", "richText": "text-id"}
+    else: dest["source"] = {"type": "unidentified", "unidentified": {}}
+    responses.append(dest)
+    link = trace_cell()
+    assert link["resolution"] == ("disconnected" if state == "disconnected" else "unsupported")
+    values = sources.source_values("book-a", "table-c", "origin-9", {"status": "not_formula"},
+                                   {"status": "observed", "items": []}, "synthetic-token", None, linked_cell=link)
+    assert values["status"] == "partial" and values["groups"][0]["status"] == "unavailable"
+    assert len(calls) == 1  # No fallback to latest and no unrelated content reads.
+
+
+def test_malformed_cell_link_ref_is_not_absence(transport):
+    _, calls = transport
+    content = linked_content()
+    del content["data"][0]["cells"][0]["value"]["destinationLink"]["destinationLink"]["revision"]
+    assert sources.cell_link(content, "table-c", "synthetic-token", None)["status"] == "unavailable"
+    assert calls == []

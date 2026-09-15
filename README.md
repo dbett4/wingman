@@ -58,12 +58,17 @@ The service repeats both cell reads and discards changed evidence; this is **not
 an atomic or revision-pinned snapshot**. Inspect again after edits.
 
 **References & links** separates addresses and numeric literals in the formula
-from Workiva range-link metadata. Formula extraction is text-only, not evaluation
-or verification of referenced cells. Named, external, structured, and computed
-references remain unresolved. Range links distinguish sources from destinations;
-destination source ranges are looked up at the reported source revision, never
-silently substituted with the latest revision. Failed or incomplete link reads
-do not become “unlinked.” Cell-level links and multi-hop source chains are not traced.
+from Workiva link metadata. Cell-level destination links follow their recorded
+source anchor to an exact cell; covering range links remain separate evidence.
+Disconnected links can retain a value. Failed or incomplete metadata reads do not
+become “unlinked,” and connected does not mean correct or up to date.
+
+**Read source values** explicitly reads up to 100 cells across 10 ranges. Formula
+references use the selected content revision; incoming links use their recorded
+source revisions, never a latest-revision substitute. Formula extraction is
+text-only, not evaluation or reconciliation. Named, external, structured, computed,
+and unbounded references remain unresolved. Inline rich-text links, non-table
+source content, and multi-hop source chains are not traced.
 
 Engagement policy, document comments, and downstream report checks are not
 connected. Page IDs do not prove client, fiscal year, or working-copy

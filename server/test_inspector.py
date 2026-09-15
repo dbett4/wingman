@@ -71,8 +71,14 @@ def test_http_linked_constant_is_not_an_unlinked_hardcode(browser):
         "direction": "destination", "id": "demo-notes-destination", "resolution": "observed", "sourceRange": "C5:D8",
         "source": {"table": "demo-notes-table", "rangeLink": "demo-notes-source", "revision": "demo-published-3"},
     }]
+    assert data["content"]["kind"] == "linked_value"
+    assert data["source"]["cellLink"] == {
+        "status": "observed", "resolution": "observed", "linkState": "connected",
+        "id": "demo-year-cell-link", "revision": "demo-link-2", "sourceCell": "D6",
+        "source": {"type": "table", "anchor": "demo-year-anchor", "table": "demo-notes-table", "revision": "demo-published-3"},
+    }
     after = browser.state()
-    assert after["requestCount"] - before["requestCount"] == 7
+    assert after["requestCount"] - before["requestCount"] == 9
     assert after["sheets"] == before["sheets"] and after["events"] == []
 
 
@@ -234,13 +240,21 @@ def test_opt_in_http_sources_at_reported_revision_without_writes(browser, sheet,
     before = browser.state()
     data = browser.request(f"/api/inspect?spreadsheetId=de00&sheetId={sheet}&addr={addr}&sources=true")
     assert data["sourceValuesRequested"] is True
-    group, = data["source"]["values"]["groups"]
+    groups = data["source"]["values"]["groups"]
+    group = groups[-1]
+    if sheet == "de02":
+        assert len(groups) == 2
+        direct = groups[0]
+        assert direct["basis"] == "cell_link_revision" and direct["revision"] == "demo-published-3"
+        assert [(c["addr"], c["content"]["value"]) for c in direct["cells"]] == [("D6", "2024")]
+    else:
+        assert len(groups) == 1
     assert group["revision"] == revision and group["status"] == "observed"
     assert [cell["addr"] for cell in group["cells"]] == addresses
     assert [cell["content"]["value"] for cell in group["cells"]] == values
     after = browser.state()
     assert after["sheets"] == before["sheets"] and after["events"] == []
-    assert after["requestCount"] == (8 if sheet == "de01" else 9)
+    assert after["requestCount"] == (8 if sheet == "de01" else 13)
 
 
 @pytest.mark.parametrize("failure", ["changed", "unavailable"])
@@ -248,7 +262,7 @@ def test_origin_change_or_failed_recheck_discards_source_values(transport, monke
     responses, _ = transport
     returned = []
 
-    def read_sources(*args):
+    def read_sources(*args, **kwargs):
         returned.append(args)
         return {"status": "observed", "groups": [{"status": "observed", "cells": [{"value": "must be discarded"}]}]}
 
@@ -261,3 +275,26 @@ def test_origin_change_or_failed_recheck_discards_source_values(transport, monke
     assert len(returned) == 1 and returned[0][2] == "revision-9"
     assert "values" not in data["source"]
     assert data["status"] == ("changed" if failure == "changed" else "partial")
+
+
+def test_http_disconnected_cell_link_retains_nonblank_content(browser):
+    before = browser.state()
+    data = browser.request("/api/inspect?spreadsheetId=de00&sheetId=de02&addr=B3")
+    assert data["content"]["value"] == data["calculated"]["value"] == "Accrual"
+    link = data["source"]["cellLink"]
+    assert link["status"] == "observed" and link["linkState"] == link["resolution"] == "disconnected"
+    assert "sourceCell" not in link and "source" not in link
+    assert data["source"]["rangeLinks"]["status"] == "observed"  # A covering range does not prove the cell is connected.
+    assert browser.state()["requestCount"] == 8
+    assert browser.state()["sheets"] == before["sheets"] and browser.state()["events"] == []
+
+
+def test_changed_link_identity_discards_trace_even_when_content_is_unchanged(transport, monkeypatch):
+    responses, _ = transport
+    for i, response in enumerate(responses["content"]):
+        response["data"][0]["cells"][0] = {"rawValue": "42", "value": {"type": "destinationLink",
+            "destinationLink": {"destinationLink": {"destinationLink": "before" if i == 0 else "after", "revision": "link-7"}}}}
+    monkeypatch.setattr(inspector, "cell_link", lambda *args: {"status": "observed", "sourceCell": "E11"})
+    data = inspect()
+    assert data["status"] == "changed" and "content" not in data
+    assert "cellLink" not in data["source"]

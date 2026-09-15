@@ -114,6 +114,7 @@
         sources.open = !!state.sources;
         var source = data.source || {}, formula = source.formula || {}, links = source.rangeLinks || {};
         var sourceValues = source.values;
+        var cellLink = source.cellLink;
         var items = links.items || [];
         var sourceSummary = el("summary", null, "References & links");
         var formulaSummary = formula.status === "text_only"
@@ -129,6 +130,11 @@
           linkSummary += " · source unresolved";
         }
         if (sourceValues && sourceValues.status !== "observed") linkSummary += " · source reads incomplete";
+        if (cellLink && cellLink.status !== "not_present") {
+          linkSummary += " · " + (cellLink.status !== "observed" ? "Cell link unavailable"
+            : cellLink.linkState === "disconnected" ? "Cell link disconnected"
+            : cellLink.resolution === "observed" ? "Cell link → " + cellLink.sourceCell : "Cell-link source unresolved");
+        }
         sourceSummary.appendChild(el("span", "wi-source-summary", formulaSummary + " · " + linkSummary));
         sources.appendChild(sourceSummary);
         var refs = el("dl", "wi-evidence");
@@ -145,21 +151,48 @@
             ? "No stored formula. Workiva links are checked separately."
             : "Formula references could not be inspected."));
         }
-        var canReadSources = (formula.references || []).length || items.some(function (link) { return link.direction === "destination"; });
+        if (cellLink && cellLink.status !== "not_present") {
+          var cellDetail = el("details", "wi-details wi-cell-link");
+          cellDetail.open = cellLink.resolution !== "observed";
+          cellDetail.appendChild(el("summary", null, "Cell-level link · " + (cellLink.linkState || "Unavailable")));
+          if (cellLink.reason) cellDetail.appendChild(el("p", "wi-warning", cellLink.reason));
+          var cellFields = el("dl", "wi-evidence");
+          if (cellLink.sourceCell) row(cellFields, "Source cell", cellLink.sourceCell, true);
+          if (cellLink.id) row(cellFields, "Destination link ID", cellLink.id, true);
+          if (cellLink.revision) row(cellFields, "Destination link revision", cellLink.revision, true);
+          if (cellLink.source) {
+            row(cellFields, "Source content type", cellLink.source.type);
+            if (cellLink.source.table) row(cellFields, "Source table ID", cellLink.source.table, true);
+            row(cellFields, "Source anchor ID", cellLink.source.anchor, true);
+            row(cellFields, "Source anchor revision", cellLink.source.revision, true);
+          }
+          cellDetail.appendChild(cellFields);
+          sources.appendChild(cellDetail);
+        }
+        var canReadSources = (formula.references || []).length || (cellLink && cellLink.resolution === "observed") ||
+          items.some(function (link) { return link.direction === "destination"; });
         if (canReadSources) {
           var sourceButton = el("button", "wm-btn wi-read-sources", sourceValues ? "Refresh source values" : "Read source values");
           sourceButton.type = "button";
           sourceButton.onclick = function () { inspect(true); };
           sources.appendChild(sourceButton);
-          sources.appendChild(el("p", "wi-description", "Up to 100 cells / 10 ranges. Formula references use the selected content revision; incoming links use their reported published revision."));
+          sources.appendChild(el("p", "wi-description", "Up to 100 cells / 10 ranges. Formula references use the selected content revision; incoming links use their recorded source revisions."));
         }
         if (sourceValues) {
           if (sourceValues.status !== "observed") sources.appendChild(el("p", "wi-warning", "Direct source reads are incomplete. Unresolved references or unavailable links remain above and below."));
           sourceValues.groups.forEach(function (group) {
             var block = el("details", "wi-details wi-source-values");
-            block.open = sourceValues.groups.length === 1;
-            block.appendChild(el("summary", null, (group.name || "Source table") + " · " + (group.reference || "Range unresolved")));
-            block.appendChild(el("p", "wi-description", (group.basis === "published_revision" ? "Published revision: " : "Selected content revision: ") + (group.revision || "Not available")));
+            block.open = sourceValues.groups.length === 1 || group.basis === "cell_link_revision";
+            block.appendChild(el("summary", null, (group.basis === "cell_link_revision" ? "Cell-link source · " : "") +
+              (group.name || "Source table") + " · " + (group.reference || "Range unresolved")));
+            if (group.basis === "cell_link_revision") {
+              var selected = el("p", "wi-description wi-selected-content", "Selected " + target.addr + " stored content: ");
+              selected.appendChild(el("code", null, valueText(data.content)));
+              block.appendChild(selected);
+            }
+            var revisionLabel = group.basis === "published_revision" ? "Published revision: "
+              : group.basis === "cell_link_revision" ? "Source anchor revision: " : "Selected content revision: ";
+            block.appendChild(el("p", "wi-description", revisionLabel + (group.revision || "Not available")));
             if (group.status !== "observed") {
               block.appendChild(el("p", "wi-warning", group.reason));
             } else {
@@ -181,7 +214,7 @@
               table.appendChild(tbody); block.appendChild(table);
             }
             var identity = el("dl", "wi-evidence");
-            row(identity, "Source table ID", group.tableId, true);
+            row(identity, "Source table ID", group.tableId || "Not available", true);
             block.appendChild(identity);
             sources.appendChild(block);
           });
@@ -216,7 +249,7 @@
           linkDetail.appendChild(fields);
           sources.appendChild(linkDetail);
         });
-        sources.appendChild(el("p", "wi-description", "Range links only, not cell-level links or a full source chain. Link metadata is not proof that reports are up to date."));
+        sources.appendChild(el("p", "wi-description", "Single-step cell and range links only; inline text links and the full source chain are not traced. Connected does not mean a report is correct or up to date."));
         page.appendChild(sources);
       }
       (data.warnings || []).forEach(function (warning) {

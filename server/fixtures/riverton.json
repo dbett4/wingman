@@ -37,6 +37,10 @@
         ["Scope", "Fictional demonstration only"]
       ],
       "formulas": {},
+      "cellLinks": {
+        "B2": {"destinationLink": "demo-year-cell-link", "revision": "demo-link-2"},
+        "B3": {"destinationLink": "demo-basis-disconnected", "revision": "demo-link-4"}
+      },
       "formats": {"B2": {"valueFormat": {"valueFormatType": "PERIOD"}}},
       "rangeLinks": [{
         "id": "demo-notes-destination", "table": "de02", "type": "destination", "revision": "demo-local-2",
@@ -44,6 +48,30 @@
           "table": "demo-notes-table", "rangeLink": "demo-notes-source", "revision": "demo-published-3"
         }}
       }]
+    }
+  ],
+  "cellDestinationLinks": [
+    {
+      "id": "demo-year-cell-link", "revision": "demo-link-2", "status": "connected",
+      "content": {"type": "table", "table": "de02"},
+      "source": {"type": "anchor", "anchor": {
+        "anchor": "demo-year-anchor", "revision": "demo-published-3",
+        "content": {"type": "table", "table": "demo-notes-table"}
+      }}
+    },
+    {
+      "id": "demo-basis-disconnected", "revision": "demo-link-4", "status": "disconnected",
+      "content": {"type": "table", "table": "de02"},
+      "source": {"type": "unidentified", "unidentified": {}}
+    }
+  ],
+  "sourceAnchors": [
+    {
+      "id": "demo-year-anchor", "revision": "demo-published-3",
+      "content": {"type": "table", "table": "demo-notes-table"},
+      "attachmentPoint": {"type": "tableRange", "range": {
+        "startRow": 5, "stopRow": 5, "startColumn": 3, "stopColumn": 3
+      }}
     }
   ],
   "publishedTables": {

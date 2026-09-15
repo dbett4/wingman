@@ -165,6 +165,7 @@ def test_inspector_evidence_and_navigation(demo_url):
         run("wait", "--fn", f"{root}.querySelector('.wi-address').textContent === 'B2'")
         click(".wi-inspect")
         run("wait", "--fn", ready + f" && !!{root}.querySelector('.wi-link')")
+        check(f"!{root}.querySelector('.wi-sources').open && {root}.querySelector('.wi-source-summary').textContent.includes('Cell link → D6')")
         click(".wi-sources > summary")
         check(f"{root}.querySelector('.wi-link summary').textContent === 'Linked from C5:D8'")
         run("eval", f"{root}.querySelector('.wi-link summary').focus()")
@@ -174,8 +175,29 @@ def test_inspector_evidence_and_navigation(demo_url):
         click(".wi-read-sources")
         run("wait", "--fn", ready + f" && !!{root}.querySelector('.wi-values')")
         check(f"{root}.querySelector('.wi-evidence dd').textContent === '2025'")
-        check(f"{root}.querySelector('.wi-values tbody tr:nth-child(4)').textContent === 'D62024'")
-        check(f"{root}.querySelector('.wi-source-values').textContent.includes('Published revision: demo-published-3')")
+        check(f"{root}.querySelectorAll('.wi-source-values').length === 2")
+        check(f"{root}.querySelector('.wi-source-values').open && {root}.querySelector('.wi-source-values').textContent.includes('Source anchor revision: demo-published-3')")
+        check(f"{root}.querySelector('.wi-selected-content').textContent === 'Selected B2 stored content: 2025'")
+        check(f"{root}.querySelector('[aria-label=\"Source cells in D6\"] tbody').textContent === 'D62024'")
+        run("eval", f"{root}.querySelectorAll('.wi-source-values')[1].querySelector('summary').click()")
+        check(f"{root}.querySelectorAll('.wi-source-values')[1].open && {root}.querySelectorAll('.wi-source-values')[1].textContent.includes('Published revision: demo-published-3')")
+        check(f"{root}.querySelectorAll('[aria-label=\"Source cells in C5:D8\"] tbody tr').length === 8")
+        check(f"{root}.querySelector('[aria-label=\"Source cells in C5:D8\"] tbody tr:nth-child(4)').textContent === 'D62024'")
+
+        # Nonblank destination content and covering range metadata cannot prove connection.
+        run("click", '#grid [data-addr="B3"] button')
+        run("wait", "--fn", f"{root}.querySelector('.wi-address').textContent === 'B3'")
+        click(".wi-inspect")
+        run("wait", "--fn", ready + f" && !!{root}.querySelector('.wi-cell-link')")
+        check(f"{root}.querySelector('.wi-evidence dd').textContent === 'Accrual'")
+        check(f"!{root}.querySelector('.wi-sources').open && {root}.querySelector('.wi-source-summary').textContent.includes('Cell link disconnected')")
+        click(".wi-sources > summary")
+        check(f"{root}.querySelector('.wi-cell-link').open && {root}.querySelector('.wi-cell-link').textContent.includes('retain its last published value')")
+        click(".wi-read-sources")
+        run("wait", "--fn", ready + f" && !!{root}.querySelector('.wi-source-values')")
+        check(f"!{root}.querySelector('.wi-source-values').querySelector('.wi-values') && {root}.querySelector('.wi-source-values').textContent.includes('No source was followed')")
+        check(f"!{root}.querySelector('[aria-label=\"Source cells in D6\"]')")
+        check("document.querySelectorAll('.trace-row').length === 0")
         run("find", "role", "button", "click", "--name", "Statement of activities", "--exact")
         run("click", '#grid [data-addr="B1"] button')
         run("wait", "--fn", f"{root}.querySelector('.wi-address').textContent === 'B1'")
@@ -299,6 +321,19 @@ def test_inspector_evidence_and_navigation(demo_url):
         click(".wi-link summary")
         check(f"{root}.querySelector('.wi-link').textContent.includes('old-revision')")
         check(f"!{root}.querySelector('.wi-sources img, .wi-sources script')")
+
+        # Denied metadata is not disconnection; unsupported sources are not guessed.
+        for link, label in [
+            ("{status:'unavailable',resolution:'unavailable',reason:'Cell link unavailable at its recorded revision.'}", "Cell link unavailable"),
+            ("{status:'observed',linkState:'connected',resolution:'unsupported',id:'<img src=x>',source:{type:'richText',anchor:'<script>',revision:'revision-9'},reason:'Non-table source content is not read by this inspector.'}", "Cell-link source unresolved"),
+        ]:
+            click(".wi-inspect")
+            run("eval", f"answer(pending.shift(), 42, {{cellLink:{link},rangeLinks:{{status:'observed',items:[]}}}})")
+            check(f"!{root}.querySelector('.wi-sources').open && {root}.querySelector('.wi-source-summary').textContent.includes({label!r})")
+            check(f"!{root}.querySelector('.wi-source-summary').textContent.includes('disconnected')")
+            click(".wi-sources > summary")
+            check(f"{root}.querySelector('.wi-cell-link').open && !{root}.querySelector('.wi-read-sources')")
+            check(f"!{root}.querySelector('.wi-sources img, .wi-sources script')")
 
         run("eval", "document.getElementById('address').textContent = 'B1:C8'")
         run("wait", "--fn", f"{root}.querySelector('.wi-inspector').textContent.includes('not a range')")

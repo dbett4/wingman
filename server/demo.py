@@ -110,6 +110,14 @@ class Workbook:
                 if (path == f"/content/tables/{link['table']}/rangeLinks/{link['id']}"
                         and query.get("$revision") == [link["revision"]]):
                     return copy.deepcopy(link)
+            for link in FIXTURE["cellDestinationLinks"]:
+                if (path == f"/content/destinationLinks/{link['id']}"
+                        and query.get("$revision") == [link["revision"]]):
+                    return copy.deepcopy(link)
+            for anchor in FIXTURE["sourceAnchors"]:
+                if (path == f"/content/tables/{anchor['content']['table']}/anchors/{anchor['id']}"
+                        and query.get("$revision") == [anchor["revision"]]):
+                    return copy.deepcopy(anchor)
         content = re.fullmatch(r"/content/tables/(de0[12]|demo-notes-table)/(cells|rangeLinks|properties)", path)
         if method == "GET" and content:
             published = FIXTURE["publishedTables"].get(content[1])
@@ -135,9 +143,11 @@ class Workbook:
                     else:
                         value = sheet["cells"][ri][ci]["value"]
                         formula = sheet["formulas"].get(wk.a1(ri, ci))
+                    link_ref = sheet.get("cellLinks", {}).get(wk.a1(ri, ci))
                     row.append({"rawValue": formula or str(value), "value": {
                         "type": "formula", "formula": {"calculatedValue": str(value), "effectiveValue": str(value)}}
-                        if formula else {"type": "plainText", "plainText": {"effectiveValue": str(value)}}})
+                        if formula else {"type": "destinationLink", "destinationLink": {"destinationLink": link_ref, "paragraphs": []}}
+                        if link_ref else {"type": "plainText", "plainText": {"effectiveValue": str(value)}}})
                 result.append({"cells": row})
             return {"data": result, "revision": revision,
                     "range": dict(zip(("startRow", "stopRow", "startColumn", "stopColumn"), (r0, r1, c0, c1)))}

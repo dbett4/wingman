@@ -11,11 +11,14 @@ In an Amp orb, use `amp orb services ensure` and its Wingman demo portal.
    and native ACCOUNTING format appear separately. Try C8 (zero) and B1 (blank).
    Expand **References & links** for B7's `B3:B6` reference, `12500` numeric literal,
    and containing source range `B3:C7`. B8 keeps `#REF!` unresolved. On Review notes,
-   inspect B2: no formula, but a destination link from `C5:D8` at a fictional
-   published revision. Expand the link for its IDs and revision.
+   inspect B2: its cell link points to source cell `D6`; a separate range link
+   covers the table and points to `C5:D8`. Expand either link for its IDs and revision.
    Choose **Read source values** to fetch B7's four referenced amounts or B2's
-   published source range. The latter deliberately contains fiscal year `2024`
-   while selected B2 shows `2025`; neither is automatically declared correct.
+   exact cell source and published source range. Source `D6` deliberately contains
+   fiscal year `2024` while selected B2 shows `2025`; neither is automatically
+   declared correct. Inspect Review notes B3: it still displays `Accrual`, but its
+   cell link is disconnected. The covering range link does not prove this cell's
+   connection, and Wingman does not infer a source cell from range offsets.
    Reads are limited to 100 cells across 10 ranges, never silently sampled.
    The inspector makes no edits, performs no reconciliation, and applies no
    client policy. Changing the cell, sheet, or workbook clears its evidence.
@@ -51,7 +54,7 @@ to update them. Packet download always runs a fresh workbook scan.
 | Review UI | `wingman-core.js`, `wingman-inspector.js`, and `wingman-panel.js`; demo-only sizing and disabled live-only controls |
 | Browser transport | `demo/demo.js` substitutes same-origin fetch for Chrome background messaging and selection for debugger-driven navigation |
 | Service | `app.Handler` inspect, scan, preview, apply, and packet routes; demo wrapper restricts accessible routes |
-| Inspect path | Metadata lookup, two pairs of single-cell sheetdata/content HTTP reads, formula tokenization, table range links, and revision-specific source-range lookup; opt-in bounded source-cell reads; no detectors or writes |
+| Inspect path | Metadata lookup, two pairs of single-cell sheetdata/content HTTP reads, formula tokenization, table range links, revision-specific source-range lookup, and cell destination-link/source-anchor lookup; opt-in bounded source-cell reads; no detectors or writes |
 | Read/scan path | Real HTTP client, two-page sheetdata reads, formula/type enrichment, detectors, grouping, diagnosis |
 | Fix path | Real fixer and account/workbook gates, using a synthetic identity and a fictional-only allowlist |
 | Upstream | In-memory HTTP simulator supporting only the fixture's endpoints; seeded formula results, immediate writes |
@@ -68,11 +71,16 @@ The content simulator uses Workiva's documented `rawValue` and nested
 are distinct; raw numeric-looking strings are not asserted to be numeric types.
 Source formula ranges (including uniquely resolved same-workbook sheet names) use
 the selected cell's content revision. Incoming range links use their reported
-published revision. Missing, mismatched, incomplete, or denied source reads never
-fall back to latest. If the origin's content revision or cell changes during the
-read, all evidence is discarded. This is still **not an atomic snapshot of cells
-and links**. Named, external, dynamic, and unbounded references remain explicit;
-cell-level links and the full dependency chain are not traversed.
+published revision. Cell-level destination links use the revision in the cell's
+link reference, then follow the source anchor at its recorded revision. A
+connected status does not establish correctness or freshness. Disconnected links
+can retain their last published value; unavailable metadata is not disconnection.
+Missing, mismatched, incomplete, or denied source reads never fall back to latest.
+If the origin's content revision or cell changes during the read, all evidence
+is discarded. This is still **not an atomic snapshot of cells and links**.
+Named, external, dynamic, and unbounded references remain explicit; inline
+rich-text links, non-table source content, and the full dependency chain are not
+traversed. Source addresses are evidence, not cross-sheet navigation controls.
 
 The zero-display finding currently receives a column-majority review target even
 though the fixture does not establish an em-dash convention. This is an evaluation
