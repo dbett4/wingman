@@ -76,6 +76,32 @@ authority. Existing Scan, Checks, and Workbook workflows remain separate and
 manual. Live Workiva compatibility and the browser-to-service connection still
 require validation; this slice does not change the localhost service architecture.
 
+## Connection and recovery
+
+Open **Connection** below the panel header, then choose **Check connection**.
+Opening the view sends no check. The explicit check calls the guarded
+`/api/connection` endpoint without requesting OAuth or reading a workbook.
+
+- **Service connected** means the extension's token was accepted and Workiva
+  credential fields are present on the backend. It does **not** establish valid
+  Workiva credentials, workbook permission, or which machine hosts the backend.
+- Missing extension configuration, missing backend credentials, rejected service
+  access, unreachable service, timeout, incompatible response, and extension
+  reload each have a distinct recovery message.
+- The fetch times out after eight seconds. **Stop waiting** ignores late replies;
+  it does not claim to cancel an operation at the backend. Leaving the view or
+  reloading the extension also invalidates pending replies.
+- **Copy diagnostics** includes the result, timestamp and connection facts, but
+  no credentials, workbook identifiers, cell content or upstream error bodies.
+- The fictional demo reports **Demo connection**, never live authorization.
+
+This is connection diagnosis, **not a completed guided installer**. The current
+build still addresses `http://127.0.0.1:8770`. For a VPS-hosted backend, an approved
+encrypted loopback forward is a candidate; this check does not provision or prove
+that route. Keep the production backend on its authoritative host rather than
+starting a second service on the browser's machine. Remote setup, clean-machine
+installation and authorized Workiva compatibility remain open in [G1](docs/roadmap.md#g1-a-reviewer-can-install-connect-and-recover-without-developer-help).
+
 ## Why I built it
 
 Financial reports often live in cloud editors where an exported file omits useful
@@ -158,6 +184,7 @@ available, and the adapter returns an explicit unavailable result when it is abs
 pip install pytest
 python3 -m pytest server/
 node extension/content.test.js
+node --test extension/background.test.js
 scripts/smoke_check.sh             # route and write-gate smoke checks
 ```
 
@@ -173,6 +200,21 @@ It starts and stops its own demo, checks preview/apply/recovery through the rend
 panel, and verifies narrow-layout overflow and control heights. In an orb,
 `agent-browser` is preinstalled; use `.venv/bin/python -m pytest` if your shell has
 not activated the repository virtual environment.
+
+For the installed MV3 connection path, with Python Playwright and its Chromium
+already installed:
+
+```bash
+python3 -m pytest scripts/test_extension_browser.py -q -s
+```
+
+This separate test requires a **free loopback port 8770**. It copies only declared
+extension assets into a disposable profile, supplies fictional configuration,
+and serves a fictional page without contacting Workiva. It exercises the real
+worker, HTTP handler, failure/recovery states, and actual panel dimensions; it
+does not prove live Workiva or remote-host compatibility. Browser sandboxing stays
+enabled. On hosts using an existing Chrome setuid sandbox, select that installed
+helper with `CHROME_DEVEL_SANDBOX`; do not disable sandboxing to run the test.
 
 ## Amp orbs
 

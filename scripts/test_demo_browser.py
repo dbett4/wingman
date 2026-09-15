@@ -356,3 +356,95 @@ def test_inspector_evidence_and_navigation(demo_url):
         assert not run("errors").strip(), "Browser reported uncaught JavaScript errors"
     finally:
         run("close")
+
+
+def test_connection_check_and_recovery(demo_url):
+    executable = shutil.which("agent-browser")
+    assert executable, "Install agent-browser and Chromium first"
+    session = "wm-connect-" + uuid.uuid4().hex[:8]
+    root = "document.getElementById('__wk_wingman__').shadowRoot"
+
+    def run(*args):
+        result = subprocess.run([executable, "--session", session, *args],
+                                capture_output=True, text=True, timeout=45)
+        assert result.returncode == 0, result.stdout + result.stderr
+        return result.stdout
+
+    def check(expression):
+        run("eval", "(() => { if (!(" + expression + ")) throw new Error(" + repr(expression) + "); return true; })()")
+
+    def click(selector):
+        run("eval", f"{root}.querySelector({selector!r}).click()")
+
+    try:
+        run("open", demo_url)
+        run("wait", "--fn", f"!!{root}.querySelector('.wc-toggle')")
+        run("eval", "window.sent=[]; window.realSend=chrome.runtime.sendMessage; chrome.runtime.sendMessage=(msg,cb)=>{sent.push(msg.path); realSend(msg,cb)}")
+        click(".wc-toggle")
+        check(f"{root}.querySelector('.wc-status h3').textContent === 'Not checked' && sent.length === 0")
+        check(f"{root}.querySelector('.wm-body').getAttribute('role') === 'region' && {root}.activeElement.classList.contains('wc-page')")
+        run("eval", f"{root}.querySelector('.wc-check').focus()")
+        run("press", "Enter")
+        run("wait", "--fn", f"{root}.querySelector('.wc-status h3').textContent === 'Demo connection' && !document.getElementById('reset').disabled")
+        check("JSON.stringify(sent) === JSON.stringify(['/api/connection'])")
+        check(f"{root}.querySelector('.wc-facts').textContent.includes('Simulated, not tested') && {root}.activeElement.classList.contains('wc-check')")
+        check("document.getElementById('request-count').textContent === '0 simulated API requests' && document.querySelectorAll('.trace-row').length === 0")
+        run("eval", "Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:text=>{window.copied=text;return Promise.resolve()}}})")
+        click(".wc-copy")
+        check("copied.includes('Checked at: 20') && copied.includes('Workbook access: Not tested') && !copied.includes('de00')")
+        click(".wc-toggle")
+        check(f"!!{root}.querySelector('.wi-inspector') && {root}.querySelector('.wm-body').getAttribute('role') === 'tabpanel'")
+
+        # Controlled responses test the controller, not Workiva or the Chrome broker.
+        run("eval", "window.pending=[]; chrome.runtime.sendMessage=(msg,cb)=>{if(msg.path?.startsWith('/api/connection')||msg.path?.startsWith('/api/inspect')||msg.path?.startsWith('/api/queue'))pending.push({msg,cb});else realSend(msg,cb)}")
+        click(".wi-inspect")
+        click(".wc-toggle")
+        run("eval", "pending.shift().cb({ok:false,offline:true})")
+        check(f"!!{root}.querySelector('.wc-page') && !{root}.querySelector('.wi-inspector')")
+        click(".wc-check")
+        check(f"{root}.querySelector('.wc-check').textContent === 'Stop waiting'")
+        click(".wc-check")
+        run("eval", "pending.shift().cb({ok:true,data:{simulation:true,service:'wingman-demo'}})")
+        check(f"{root}.querySelector('.wc-status h3').textContent === 'Check stopped'")
+
+        click(".wc-check")
+        click(".wc-toggle")
+        click(".wc-toggle")
+        run("eval", "pending.shift().cb({ok:true,data:{simulation:true,service:'wingman-demo'}})")
+        check(f"{root}.querySelector('.wc-status h3').textContent === 'Not checked'")
+        for reply, title in [
+            ("{ok:false,configError:true,error:'sensitive-marker'}", "Extension setup needed"),
+            ("{ok:false,offline:true}", "Service unreachable"),
+            ("{ok:false,status:403,data:{error:'sensitive-marker'}}", "Service access rejected"),
+            ("{ok:false,status:500,data:{error:'<img src=x>'}}", "Connection check failed"),
+            ("{ok:true,data:null}", "Service update needed"),
+            ("{ok:true,data:{service:'wingman',protocol:1,readOnly:true,authorization:'accepted',workivaCredentials:'missing',workivaAccess:'not_tested'}}", "Workiva setup incomplete"),
+            ("{ok:true,data:{service:'wingman',protocol:1,readOnly:true,authorization:'accepted',workivaCredentials:'present',workivaAccess:'not_tested'}}", "Service connected"),
+        ]:
+            click(".wc-check")
+            run("eval", f"pending.shift().cb({reply})")
+            check(f"{root}.querySelector('.wc-status h3').textContent === {title!r}")
+            check(f"{root}.querySelector('.wc-facts').textContent.includes('Workbook accessNot tested') && !{root}.querySelector('.wc-page').textContent.includes('sensitive-marker') && !{root}.querySelector('.wc-page img')")
+
+        # The missing-callback deadline is real; late success cannot undo a timeout.
+        click(".wc-check")
+        run("wait", "--fn", f"{root}.querySelector('.wc-status h3').textContent === 'Connection timed out'")
+        run("eval", "pending.shift().cb({ok:true,data:{simulation:true,service:'wingman-demo'}})")
+        check(f"{root}.querySelector('.wc-status h3').textContent === 'Connection timed out'")
+        click(".wc-check")
+        run("click", "#open-panel")
+        run("eval", "pending.shift().cb({ok:true,data:{simulation:true,service:'wingman-demo'}})")
+        run("click", "#open-panel")
+        click(".wc-toggle")
+        check(f"{root}.querySelector('.wc-status h3').textContent === 'Not checked'")
+        run("set", "viewport", "390", "844", "2")
+        check("document.documentElement.scrollWidth <= innerWidth")
+        check(f"[...{root}.querySelectorAll('.wc-toggle,.wc-check,.wc-copy')].every(e=>e.getBoundingClientRect().height>=40)")
+        click(".wc-check")
+        run("eval", "chrome.runtime.id=undefined")
+        run("wait", "--fn", f"{root}.querySelector('.wc-status h3').textContent === 'Extension reloaded'")
+        run("eval", "pending.shift().cb({ok:true,data:{simulation:true,service:'wingman-demo'}})")
+        check(f"{root}.querySelector('.wc-check').disabled && {root}.querySelector('.wc-status h3').textContent === 'Extension reloaded'")
+        assert not run("errors").strip(), "Browser reported uncaught JavaScript errors"
+    finally:
+        run("close")

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Wingman",
   "version": "0.1.0",
-  "description": "Reads the active Workiva cell from the DOM and flags pixel defects the API can't see: contrast and blank linked cells.",
+  "description": "Inspect Workiva cell values and their sources, review workbook findings, and preview narrow repairs.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -30,6 +30,7 @@
       "js": [
         "wingman-core.js",
         "wingman-inspector.js",
+        "wingman-connection.js",
         "wingman-panel.js"
       ],
       "run_at": "document_idle",

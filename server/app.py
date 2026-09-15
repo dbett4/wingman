@@ -10,6 +10,7 @@ Endpoints (JSON):
   GET  /health
   GET  /config                                     -> presets + safe_fix_kinds contract
   GET  /api/status, /status                         -> wingman feature flags + extension build id (read-only)
+  GET  /api/connection                              -> authenticated local configuration check; no Workiva calls
   GET  /api/queue?spreadsheetId=..&sheetId=..&checks=tieout  -> scan queue + run_checks FAILs
   GET  /api/checks?spreadsheetId=..&suite=tieout|hardening_gate|scorecard -> checks FAILs only
        (suite=scorecard surfaces an existing tieout scorecard JSON read-only; no subprocess)
@@ -417,7 +418,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
-        if _route_path(self.path) == "/api/inspect":
+        if _route_path(self.path) in ("/api/inspect", "/api/connection"):
             self.send_header("Cache-Control", "no-store")
         self._cors(self.headers.get("Origin"))
         self.end_headers()
@@ -473,12 +474,21 @@ class Handler(BaseHTTPRequestHandler):
                     "status": "/api/status",
                     "digest": "/digest",
                     "operator_config": _operator_config_status(),
-                    "guarded_endpoints": ["/api/inspect", "/api/queue", "/api/checks", "/api/review-packet", "/fix", "/apply"],
+                    "guarded_endpoints": ["/api/connection", "/api/inspect", "/api/queue", "/api/checks", "/api/review-packet", "/fix", "/apply"],
                 })
             elif path == "/config":
                 self._send(200, wingman_config.service_config())
             elif path in ("/api/status", "/status"):
                 self._send(200, _wingman_status())
+            elif path == "/api/connection":
+                # Unlike local status probes, this route always requires the token.
+                # Presence of credentials is not evidence of valid Workiva access.
+                self._send(200, {
+                    "service": "wingman", "protocol": 1, "readOnly": True,
+                    "authorization": "accepted", "workivaAccess": "not_tested",
+                    "workivaCredentials": "present" if all(os.environ.get(k) for k in
+                        ("WORKIVA_CLIENT_ID", "WORKIVA_CLIENT_SECRET")) else "missing",
+                })
             elif path == "/version":
                 self._send(200, {"build": _ext_build()})  # dev auto-reload signal
             elif path == "/digest":

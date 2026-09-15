@@ -26,11 +26,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         const opts = Object.assign({}, msg.opts);
         opts.headers = Object.assign({}, opts.headers, { "X-Wingman-Token": WM_TOKEN });
+        if (msg.path === "/api/connection") {
+          opts.cache = "no-store";
+          opts.signal = AbortSignal.timeout(8000);
+        }
         const r = await fetch(SERVICE + msg.path, opts);
         const data = await r.json().catch(() => ({}));
         sendResponse({ ok: r.ok, status: r.status, data });
       } catch (e) {
-        sendResponse({ ok: false, offline: true, error: String(e) });  // connection refused -> service down
+        if (e.name === "TimeoutError") sendResponse({ ok: false, timeout: true });
+        else sendResponse({ ok: false, offline: true, error: String(e) });
       }
     })();
     return true;  // async response

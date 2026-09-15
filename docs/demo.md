@@ -4,6 +4,13 @@ Run `python3 server/demo.py` with Python 3.11 or newer, then open local port 877
 No pip install, `.env`, OAuth credentials, or unpacked extension is required.
 In an Amp orb, use `amp orb services ensure` and its Wingman demo portal.
 
+**Connection** below the panel header opens a separate status view. Choose **Check
+connection** to see **Demo connection**: the fictional service responded, but
+extension authorization and Workiva access remain untested. No simulated workbook
+API requests or writes are added. **Copy diagnostics** includes a timestamp and
+those limits without workbook content or identifiers. Use **Back to Inspect** to
+return to the review.
+
 ## Show the review, not just the findings count
 
 1. **Inspect.** The panel opens without a scan. Select B7 and choose **Inspect
@@ -51,9 +58,10 @@ to update them. Packet download always runs a fresh workbook scan.
 
 | Layer | Execution |
 | --- | --- |
-| Review UI | `wingman-core.js`, `wingman-inspector.js`, and `wingman-panel.js`; demo-only sizing and disabled live-only controls |
+| Review UI | `wingman-core.js`, `wingman-inspector.js`, `wingman-connection.js`, and `wingman-panel.js`; demo-only sizing and disabled live-only controls |
 | Browser transport | `demo/demo.js` substitutes same-origin fetch for Chrome background messaging and selection for debugger-driven navigation |
 | Service | `app.Handler` inspect, scan, preview, apply, and packet routes; demo wrapper restricts accessible routes |
+| Connection check | Demo-only response identifying the simulation; no token or Workiva credential validation |
 | Inspect path | Metadata lookup, two pairs of single-cell sheetdata/content HTTP reads, formula tokenization, table range links, revision-specific source-range lookup, and cell destination-link/source-anchor lookup; opt-in bounded source-cell reads; no detectors or writes |
 | Read/scan path | Real HTTP client, two-page sheetdata reads, formula/type enrichment, detectors, grouping, diagnosis |
 | Fix path | Real fixer and account/workbook gates, using a synthetic identity and a fictional-only allowlist |
@@ -118,7 +126,11 @@ cell states and untouched neighbors for all three safe fixes, pagination, sessio
 isolation, readback/recovery, packet redaction, and disabled routes. The browser
 tests exercise the real panel, check the narrow layout, and inject delayed service
 replies to test context invalidation and keyboard focus. Those injected replies
-test the controller only, not live Workiva consistency. CI runs all three.
+test the controller only, not live Workiva consistency. Connection coverage includes
+cancel, timeout, reload, distinct failure states, redacted diagnostics and late
+reply rejection. CI runs all three commands above. The separate installed-extension
+connection test is documented in the [README](../README.md#test-it); it does not use
+the demo's Chrome messaging substitute.
 
 For a résumé walkthrough, say “reproducible simulated integration,” not “production
 accuracy” or “guaranteed undo.” Publish time-saved or accuracy figures only after

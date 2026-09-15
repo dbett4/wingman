@@ -29,7 +29,12 @@
     clearInterval(inspectTimer);
     inspectRequest++;
     inspectState = { error: "Extension reloaded. Refresh this Workiva tab and reopen Wingman." };
-    if (open && activeTab === "inspect" && panelUi) paintInspection();
+    connectionRequest++;
+    connectionState = { error: { reloaded: true } };
+    if (open && panelUi) {
+      if (connectionOpen) paintConnection();
+      else if (activeTab === "inspect") paintInspection();
+    }
     if (domObserver) { domObserver.disconnect(); domObserver = null; }
     if (toastT) { clearTimeout(toastT); toastT = null; }
     pillState = "drift";
@@ -84,7 +89,9 @@
           }
           if (!resp) return reject(new Error("extension messaging failed"));
           if (resp.offline) return reject(Object.assign(new Error("service not reachable"), { offline: true }));
-          if (!resp.ok) return reject(new Error((resp.data && resp.data.error) || resp.error || ("HTTP " + resp.status)));
+          if (!resp.ok) return reject(Object.assign(
+            new Error((resp.data && resp.data.error) || resp.error || ("HTTP " + resp.status)),
+            { status: resp.status, configError: !!resp.configError, timeout: !!resp.timeout }));
           resolve(resp.data);
         });
       } catch (e) {
@@ -792,6 +799,7 @@
   var panelUi = null;
   var activeTab = "inspect";
   var inspectContext = null, inspectState = {}, inspectRequest = 0, inspectTimer = null;
+  var connectionOpen = false, connectionState = {}, connectionRequest = 0;
   var tabCache = { scan: null, checks: null, workbook: null };
   var wideMode = false;
   var customPanelSize = null;  // { width, height } when user resized; null => preset narrow/wide
@@ -1114,7 +1122,47 @@
     clearInterval(inspectTimer);
     inspectRequest++;
     inspectState = {};
+    connectionRequest++;
+    connectionOpen = false;
+    connectionState = {};
     closeCommandPalette(); panelUi = null; renderPill();
+  }
+
+  function paintConnection() {
+    syncTabUi();
+    WingmanConnection.render(panelUi.body, connectionState, !!demoEmbed, checkConnection, function () {
+      connectionRequest++;
+      connectionState = { cancelled: true };
+      paintConnection();
+    }, copyText);
+  }
+  function toggleConnection() {
+    connectionRequest++;
+    if (connectionState.loading) connectionState = {};
+    connectionOpen = !connectionOpen;
+    inspectRequest++;
+    if (inspectState.loading) inspectState = {};
+    syncTabUi();
+    restoreTabView();
+    if (connectionOpen) panelUi.body.querySelector('.wc-page').focus();
+    else panelUi.connectionButton.focus();
+  }
+  function checkConnection() {
+    if (!guardExtensionContext()) return;
+    var request = ++connectionRequest;
+    connectionState = { loading: true };
+    paintConnection();
+    function finish(state) {
+      clearTimeout(timer);
+      if (!open || !connectionOpen || extensionInvalidated || request !== connectionRequest) return;
+      connectionRequest++;
+      connectionState = Object.assign(state, { checkedAt: new Date().toISOString() });
+      paintConnection();
+    }
+    // Also bound a missing extension callback; the broker aborts its fetch at 8s.
+    var timer = setTimeout(function () { finish({ error: { timeout: true } }); }, 8500);
+    svc("/api/connection", { cache: "no-store" }).then(function (data) { finish({ data: data }); })
+      .catch(function (error) { finish({ error: error }); });
   }
 
   function currentInspection() {
@@ -1134,7 +1182,7 @@
       tabCache = { scan: null, checks: null, workbook: null };
       if (open && activeTab !== "inspect" && panelUi) restoreTabView();
     }
-    if (open && activeTab === "inspect" && panelUi) paintInspection();
+    if (open && !connectionOpen && activeTab === "inspect" && panelUi) paintInspection();
   }
   function paintInspection() {
     WingmanInspector.render(panelUi.body, inspectContext || currentInspection(), inspectState, inspectSelectedCell);
@@ -1154,7 +1202,7 @@
     if (readSources) query += "&sources=true";
     function stillCurrent() {
       syncInspection();
-      return !extensionInvalidated && open && activeTab === "inspect" && request === inspectRequest;
+      return !extensionInvalidated && open && !connectionOpen && activeTab === "inspect" && request === inspectRequest;
     }
     svc("/api/inspect?" + query, { cache: "no-store" }).then(function (data) {
       if (!stillCurrent()) return;
@@ -1173,6 +1221,9 @@
 
   function setActiveTab(tabId) {
     if (TAB_IDS.indexOf(tabId) < 0) tabId = "inspect";
+    connectionRequest++;
+    connectionOpen = false;
+    if (connectionState.loading) connectionState = {};
     if (activeTab !== tabId && inspectState.loading) {
       inspectRequest++;
       inspectState = {};
@@ -1187,7 +1238,12 @@
   function syncTabUi() {
     if (!panelUi || !panelUi.tabsBar) return;
     panelUi.panel.classList.toggle("wi-mode", activeTab === "inspect");
-    panelUi.body.setAttribute("aria-labelledby", "wm-tab-" + activeTab);
+    panelUi.panel.classList.toggle("wc-mode", connectionOpen);
+    panelUi.body.setAttribute("role", connectionOpen ? "region" : "tabpanel");
+    panelUi.body.setAttribute("aria-labelledby", connectionOpen ? "wc-heading" : "wm-tab-" + activeTab);
+    panelUi.connectionButton.setAttribute("aria-expanded", String(connectionOpen));
+    panelUi.connectionButton.textContent = connectionOpen ? "← Back to " + tabLabel(activeTab)
+      : "Connection · " + WingmanConnection.describe(connectionState, !!demoEmbed).title;
     panelUi.tabsBar.querySelectorAll(".wm-tab").forEach(function (btn) {
       var tid = btn.getAttribute("data-tab");
       btn.classList.toggle("active", tid === activeTab);
@@ -1246,6 +1302,10 @@
   function restoreTabView() {
     if (!panelUi) return;
     syncInspection();
+    if (connectionOpen) {
+      paintConnection();
+      return;
+    }
     if (activeTab === "inspect") {
       paintInspection();
       return;
@@ -1311,7 +1371,7 @@
       return panelUi;
     }
     var panel = el("div", "wm-panel");
-    var inspectorStyle = el("style", null, WingmanInspector.styles);
+    var inspectorStyle = el("style", null, WingmanInspector.styles + WingmanConnection.styles);
     panel.appendChild(inspectorStyle);
     var head = el("div", "wm-head");
     var logo = el("img", "wm-logo"); logo.src = LOGO; logo.style.width = "22px"; logo.style.height = "22px";
@@ -1341,6 +1401,12 @@
     var x = el("button", "wm-x", "×"); x.title = "minimize"; x.onclick = closePanel; head.appendChild(x);
     makeDraggable(head, closePanel);
     panel.appendChild(head);
+
+    var connectionButton = el("button", "wm-btn wc-toggle");
+    connectionButton.type = "button";
+    connectionButton.setAttribute("aria-controls", "wm-body");
+    connectionButton.onclick = toggleConnection;
+    panel.appendChild(connectionButton);
 
     var tabsBar = el("div", "wm-tabs");
     tabsBar.setAttribute("role", "tablist");
@@ -1390,7 +1456,7 @@
     panelUi = {
       panel: panel, ctx: ctx, operator: operator, body: body, tabActions: tabActions, tabsBar: tabsBar,
       thermo: thermo, presetChip: presetChip, wideBtn: wideBtn, resetSizeBtn: resetSizeBtn,
-      cmdBtn: cmdBtn,
+      cmdBtn: cmdBtn, connectionButton: connectionButton,
     };
     applyPanelLayout();
     syncTabUi();
@@ -1421,7 +1487,7 @@
 
   function reviewIsCurrent(ui, ids, tab) {
     var current = parseIds();
-    return ui === panelUi && activeTab === tab && current &&
+    return ui === panelUi && !connectionOpen && activeTab === tab && current &&
       current.spreadsheetId === ids.spreadsheetId && current.sheetId === ids.sheetId;
   }
 

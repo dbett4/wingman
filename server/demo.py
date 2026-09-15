@@ -253,6 +253,7 @@ class UpstreamHandler(BaseHTTPRequestHandler):
 
 ASSETS = {"/": "demo/index.html", "/demo/demo.css": "demo/demo.css", "/demo/demo.js": "demo/demo.js",
           "/wingman-inspector.js": "extension/wingman-inspector.js",
+          "/wingman-connection.js": "extension/wingman-connection.js",
           "/wingman-core.js": "extension/wingman-core.js", "/wingman-panel.js": "extension/wingman-panel.js",
           "/icons/icon128.png": "extension/icons/icon128.png"}
 GET_ROUTES = {"/config", "/api/inspect", "/api/queue", "/api/review-packet"}
@@ -317,6 +318,8 @@ class DemoHandler(app.Handler):
             with book.lock:
                 if self.command == "GET" and path == "/demo/state":
                     self._send(200, book.state())
+                elif self.command == "GET" and path == "/api/connection":
+                    self._send(200, {"simulation": True, "service": "wingman-demo"})
                 elif self.command == "GET" and path in ("/api/status", "/status"):
                     self._send(200, {"simulation": True, "service": "wingman-demo",
                                      "features": {"formula_fetch": True, "formula_fetch_mode": "full",

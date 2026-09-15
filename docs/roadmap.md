@@ -23,16 +23,30 @@ inspection is read-only; automation never substitutes for accounting judgment.
 Implemented locally: credential-free fictional demo; selected-cell inspection;
 separate stored content, calculated result and native format; bounded formula and
 link-source reads; single-step cell-link tracing; stale-response rejection; and
-existing scan/preview/apply workflows. See [demo.md](demo.md) for their boundaries.
+existing scan/preview/apply workflows. Connection diagnosis now separates service
+authorization, backend credential presence and untested Workiva access, with
+explicit recovery states and redacted diagnostics. See [demo.md](demo.md) for
+the fictional demo's boundaries.
 
-The latest local verification passed 592 backend tests, 272 extension checks, and
-two browser workflows; 13 NumPy-dependent vision tests were skipped. Those results
-do not prove live compatibility, detector accuracy, write safety under concurrent
-edits, or usability by a new reviewer. No goal below is closed by that baseline.
+Local verification passed 594 backend tests, 302 extension checks, four worker
+contract tests, three demo browser workflows and two installed-extension connection
+cases. Thirteen NumPy-dependent vision tests were skipped. The installed test uses
+the real MV3 worker and HTTP handler, but fictional credentials and a substituted
+page, not a Workiva session. Dark/light and narrow connection views were inspected.
+These results do not prove live compatibility, detector accuracy, write safety under
+concurrent edits, or usability by a new reviewer. No goal below is closed by this baseline.
 
 ## G1. A reviewer can install, connect and recover without developer help
 
 Why: a polished panel is not a usable product if the service connection is opaque.
+
+**Open.** The local diagnostic/recovery slice is implemented and tested, including
+missing configuration, rejected service tokens, missing backend credentials, network
+loss, timeout and late replies. The supported remote connection, provisioned package
+and first real inspection remain unproven. An encrypted loopback SSH forward to the
+authoritative VPS is the proposed private-install route; deployment, credentials and
+installation into the owner's browser require action-specific approval. It is not
+running merely because the panel now explains it.
 
 - Provide one guided setup path, readable connection status, and a safe diagnostic
   action. Distinguish service offline, credentials missing, access denied,

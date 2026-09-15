@@ -66,6 +66,41 @@ function eq(label, got, want) {
   } }), "ACCOUNTING · 0 decimals · entered in ONES · shown in THOUSANDS");
 })();
 
+// --- connection evidence is not Workiva access ---
+(function () {
+  const wc = require("./wingman-connection.js");
+  const data = { service: "wingman", protocol: 1, readOnly: true, authorization: "accepted",
+    workivaCredentials: "present", workivaAccess: "not_tested" };
+  eq("connection initially unchecked", wc.describe({}).code, "unchecked");
+  eq("connection check loading", wc.describe({ loading: true }).code, "checking");
+  eq("connection stopped", wc.describe({ cancelled: true }).code, "cancelled");
+  eq("connection accepted", wc.describe({ data }).code, "connected");
+  eq("connection credential presence is not access", wc.facts({ data }), [
+    ["Service authorization", "Accepted"], ["Workiva credentials", "Configured, not validated"],
+    ["Workbook access", "Not tested"], ["Workbook changes", "None — connection check only"],
+  ]);
+  eq("connection missing backend credentials", wc.describe({ data: { ...data, workivaCredentials: "missing" } }).code, "credentials");
+  for (const [field, value] of [["service", "other"], ["protocol", "1"], ["readOnly", false],
+    ["authorization", "unknown"], ["workivaAccess", "verified"], ["workivaCredentials", null], ["simulation", true]]) {
+    eq("connection rejects incompatible " + field, wc.describe({ data: { ...data, [field]: value } }).code, "incompatible");
+  }
+  for (const invalid of [null, undefined, {}, [], "bad response"]) {
+    eq("connection rejects empty or malformed response " + JSON.stringify(invalid), wc.describe({ data: invalid }).code, "incompatible");
+  }
+  for (const [error, expected] of [[{ configError: true }, "setup"], [{ offline: true }, "offline"],
+    [{ timeout: true }, "timeout"], [{ status: 403 }, "denied"], [{ status: 401 }, "denied"],
+    [{ status: 500 }, "failed"], [{ reloaded: true }, "reloaded"]]) {
+    eq("connection error " + expected, wc.describe({ error }).code, expected);
+  }
+  const demo = { simulation: true, service: "wingman-demo" };
+  eq("connection demo explicit", wc.describe({ data: demo }, true).code, "demo");
+  eq("connection demo not live proof", wc.describe({ data: demo }, false).code, "incompatible");
+  const state = { data: { ...data, token: "sensitive-marker", workbookId: "sensitive-marker" }, checkedAt: "2026-09-15T12:34:56Z" };
+  eq("connection diagnostic has freshness", wc.diagnostics(state).includes(state.checkedAt), true);
+  eq("connection diagnostic ignores unknown sensitive fields", wc.diagnostics(state).includes("sensitive-marker"), false);
+  eq("connection diagnostic ignores upstream error bodies", wc.diagnostics({ error: { message: "sensitive-marker" } }).includes("sensitive-marker"), false);
+})();
+
 // --- classifyAddress ---
 eq("single A1",      classifyAddress("A1"),     { status: "ok", addr: "A1", isRange: false });
 eq("single C42",     classifyAddress("C42"),    { status: "ok", addr: "C42", isRange: false });

@@ -79,6 +79,36 @@ class HandlerRouteTests(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertTrue(payload.get("ok"))
 
+    def test_connection_requires_correct_token_even_on_loopback(self):
+        from unittest.mock import patch
+
+        with patch.object(app, "_token", side_effect=AssertionError("OAuth must not run")) as oauth:
+            for headers in ({}, {"X-Wingman-Token": "incorrect-synthetic-token"}):
+                request = urllib.request.Request(self.base + "/api/connection", headers=headers)
+                with self.assertRaises(urllib.error.HTTPError) as failure:
+                    urllib.request.urlopen(request, timeout=5)
+                self.assertEqual(failure.exception.code, 403)
+                self.assertEqual(failure.exception.headers["Cache-Control"], "no-store")
+            oauth.assert_not_called()
+
+    def test_connection_reports_presence_not_workiva_access_or_secrets(self):
+        from unittest.mock import patch
+
+        with patch.object(app, "_token", side_effect=AssertionError("OAuth must not run")) as oauth:
+            for client_id, secret, expected in [("fictional-id", "fictional-secret", "present"),
+                                                ("fictional-id", "", "missing"), ("", "fictional-secret", "missing")]:
+                with patch.dict(app.os.environ, {"WORKIVA_CLIENT_ID": client_id, "WORKIVA_CLIENT_SECRET": secret}):
+                    code, data = self._request("/api/connection")
+                self.assertEqual(code, 200)
+                self.assertEqual(data, {"service": "wingman", "protocol": 1, "readOnly": True,
+                                       "authorization": "accepted", "workivaAccess": "not_tested",
+                                       "workivaCredentials": expected})
+                self.assertNotIn("fictional", json.dumps(data))
+            oauth.assert_not_called()
+        request = urllib.request.Request(self.base + "/api/connection", headers={"X-Wingman-Token": app.WINGMAN_TOKEN})
+        with urllib.request.urlopen(request, timeout=5) as response:
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+
     def test_status_operator_config_shape_no_secret_values(self):
         code, payload = self._request("/api/status", token=False)
         self.assertEqual(code, 200)
