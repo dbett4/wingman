@@ -145,3 +145,129 @@ def test_destination_occupies_table_and_resolves_only_reported_revision(transpor
     assert urlsplit(calls[1]).path == "/content/tables/upstream-table/rangeLinks/upstream-link"
     assert parse_qs(urlsplit(calls[1]).query) == {"$revision": ["published-3"]}
     assert "sensitive" not in json.dumps(data)
+
+
+def content_range():
+    return {"revision": "revision-9",
+            "range": {"startRow": 10, "stopRow": 11, "startColumn": 2, "stopColumn": 4},
+            "data": [{"cells": [
+                {"rawValue": "0", "value": {"type": "plainText", "plainText": {"effectiveValue": "—"}}},
+                {"rawValue": "", "value": {"type": "plainText"}},
+                {"rawValue": "=SUM(C1:C10)", "value": {"type": "formula", "formula": {
+                    "calculatedValue": "-12340", "effectiveValue": "(12,340)"}}},
+            ]}, {"cells": [{"value": False}, {"rawValue": "2025", "value": {"type": "destinationLink"}},
+                            {"rawValue": "=literal", "value": {"type": "plainText"}}]}]}
+
+
+def properties(table="table-c", revision="revision-9"):
+    return {"id": table, "revision": revision, "name": "Synthetic source"}
+
+
+def read_values(formula="=C11:E12", links=None):
+    refs = sources.formula_references({"status": "observed", "formula": formula})
+    return sources.source_values("book-a", "table-c", "revision-9", refs,
+                                 links or {"status": "observed", "items": []}, "synthetic-token", None)
+
+
+def test_raw_content_computed_result_and_link_type_remain_distinct(transport):
+    responses, calls = transport
+    responses.extend([properties(), content_range()])
+    data = read_values()
+    group, = data["groups"]
+    assert data["status"] == group["status"] == "observed"
+    cells = group["cells"]
+    assert [cell["addr"] for cell in cells] == ["C11", "D11", "E11", "C12", "D12", "E12"]
+    assert [cell["content"]["kind"] for cell in cells] == ["raw_value", "blank", "formula", "boolean", "linked_value", "raw_value"]
+    assert [cell["content"]["value"] for cell in cells] == ["0", "", "=SUM(C1:C10)", False, "2025", "=literal"]
+    assert cells[2]["calculated"] == {"status": "observed", "value": "-12340"}
+    assert cells[0]["calculated"] == {"status": "unavailable"}
+    assert parse_qs(urlsplit(calls[1]).query) == {
+        "$revision": ["revision-9"], "startRow": ["10"], "stopRow": ["11"], "startColumn": ["2"], "stopColumn": ["4"],
+    }
+    assert len(calls) == 2  # No recursive read of C1:C10.
+
+
+@pytest.mark.parametrize("fault", ["revision", "row", "column", "shape", "next-page", "missing-cell", "denied", "properties"])
+def test_mismatched_or_incomplete_source_never_uses_latest(transport, fault):
+    responses, calls = transport
+    prop, raw = properties(), content_range()
+    if fault == "revision": raw["revision"] = "revision-10"
+    elif fault == "row": raw["range"]["startRow"] = 11
+    elif fault == "column": raw["range"]["startColumn"] = 1
+    elif fault == "shape": raw["data"][1]["cells"].pop()
+    elif fault == "next-page": raw["@nextLink"] = "https://foreign.invalid/data"
+    elif fault == "missing-cell": raw["data"][0]["cells"][0] = {}
+    elif fault == "denied": raw = PermissionError("sensitive upstream body")
+    else: prop["id"] = "wrong-table"
+    responses.extend([prop, raw])
+    data = read_values()
+    assert data["status"] == "partial" and data["groups"][0]["status"] == "unavailable"
+    assert "cells" not in data["groups"][0] and "sensitive" not in json.dumps(data)
+    assert len(calls) == (1 if fault == "properties" else 2)
+    assert all(parse_qs(urlsplit(path).query)["$revision"] == ["revision-9"] for path in calls)
+
+
+def test_published_link_is_read_at_its_own_revision_not_origin(transport):
+    responses, calls = transport
+    raw = content_range()
+    raw["revision"] = "published-3"
+    responses.extend([properties("upstream-table", "published-3"), raw])
+    data = read_values(None, {"status": "observed", "items": [{
+        "direction": "destination", "sourceRange": "C11:E12", "source": {
+            "table": "upstream-table", "revision": "published-3"}}]})
+    assert data["groups"][0]["basis"] == "published_revision"
+    assert data["groups"][0]["revision"] == "published-3"
+    assert all("/upstream-table/" in path and parse_qs(urlsplit(path).query)["$revision"] == ["published-3"] for path in calls)
+
+
+@pytest.mark.parametrize("fault", [None, "ambiguous", "revision", "foreign-page"])
+def test_quoted_sheet_name_resolves_at_pinned_revision_or_stays_unavailable(transport, fault):
+    responses, calls = transport
+    sheet = {"name": "Director's Notes", "table": {"table": "table-c", "revision": "revision-9"}}
+    page = {"data": [sheet]}
+    if fault == "ambiguous": page["data"].append(copy.deepcopy(sheet))
+    elif fault == "revision": sheet["table"]["revision"] = "revision-10"
+    elif fault == "foreign-page": page["@nextLink"] = "https://foreign.invalid/sheets"
+    responses.extend([page, properties(), content_range()])
+    data = read_values("='Director''s Notes'!$C$11:$E$12")
+    assert data["groups"][0]["status"] == ("unavailable" if fault else "observed")
+    assert len(calls) == (1 if fault else 3)
+    assert parse_qs(urlsplit(calls[0]).query) == {"$revision": ["revision-9"]}
+
+
+@pytest.mark.parametrize("count", [100, 101])
+def test_cell_budget_does_not_sample_large_ranges(transport, count):
+    responses, calls = transport
+    responses.extend([properties(), {"revision": "revision-9",
+        "range": {"startRow": 0, "stopRow": 99, "startColumn": 0, "stopColumn": 0},
+        "data": [{"cells": [{"value": i}]} for i in range(100)]}])
+    data = read_values(f"=A1:A{count}")
+    assert data["groups"][0]["status"] == ("observed" if count == 100 else "limited")
+    assert len(calls) == (2 if count == 100 else 0)
+    if count == 100:
+        assert len(data["groups"][0]["cells"]) == 100
+        assert data["groups"][0]["cells"][-1]["addr"] == "A100"
+
+
+def test_total_budget_and_unbounded_ranges_are_explicit(transport):
+    responses, calls = transport
+    responses.extend([properties(), {"revision": "revision-9",
+        "range": {"startRow": 0, "stopRow": 59, "startColumn": 0, "stopColumn": 0},
+        "data": [{"cells": [{"value": i}]} for i in range(60)]}])
+    data = read_values("=SUM(A1:A60,B1:B41,C:C)+TaxRate")
+    assert [group["status"] for group in data["groups"]] == ["observed", "limited", "unavailable"]
+    assert data["status"] == "partial" and len(calls) == 2
+
+
+def test_range_budget_applies_to_failed_attempts_too(transport):
+    responses, calls = transport
+    responses.extend([PermissionError()] * 10)
+    data = read_values("=" + "+".join(f"A{i}" for i in range(1, 12)))
+    assert len(calls) == 10
+    assert data["groups"][-1]["status"] == "limited"
+
+
+def test_missing_formula_text_is_unknown_not_a_nonformula():
+    content = sources.stored_content({"value": {"type": "formula", "formula": {"calculatedValue": "42"}}})
+    assert content["kind"] == "unknown"
+    assert sources.formula_references(content) == {"status": "unavailable"}

@@ -13,8 +13,12 @@ In an Amp orb, use `amp orb services ensure` and its Wingman demo portal.
    and containing source range `B3:C7`. B8 keeps `#REF!` unresolved. On Review notes,
    inspect B2: no formula, but a destination link from `C5:D8` at a fictional
    published revision. Expand the link for its IDs and revision.
-   The inspector makes no edits, does not verify referenced values, and applies
-   no client policy. Changing the cell, sheet, or workbook clears its evidence.
+   Choose **Read source values** to fetch B7's four referenced amounts or B2's
+   published source range. The latter deliberately contains fiscal year `2024`
+   while selected B2 shows `2025`; neither is automatically declared correct.
+   Reads are limited to 100 cells across 10 ranges, never silently sampled.
+   The inspector makes no edits, performs no reconciliation, and applies no
+   client policy. Changing the cell, sheet, or workbook clears its evidence.
 2. **Scan.** Open Scan and click **Scan** for Statement of activities. The seven findings
    include three safe fixes, three formula/reference review items, and a zero-display
    convention review item. The existing source-formula detector flags B7 because
@@ -47,17 +51,28 @@ to update them. Packet download always runs a fresh workbook scan.
 | Review UI | `wingman-core.js`, `wingman-inspector.js`, and `wingman-panel.js`; demo-only sizing and disabled live-only controls |
 | Browser transport | `demo/demo.js` substitutes same-origin fetch for Chrome background messaging and selection for debugger-driven navigation |
 | Service | `app.Handler` inspect, scan, preview, apply, and packet routes; demo wrapper restricts accessible routes |
-| Inspect path | Metadata lookup, two pairs of single-cell sheetdata/content HTTP reads, formula tokenization, table range links, and revision-specific source-range lookup; no detectors or writes |
+| Inspect path | Metadata lookup, two pairs of single-cell sheetdata/content HTTP reads, formula tokenization, table range links, and revision-specific source-range lookup; opt-in bounded source-cell reads; no detectors or writes |
 | Read/scan path | Real HTTP client, two-page sheetdata reads, formula/type enrichment, detectors, grouping, diagnosis |
 | Fix path | Real fixer and account/workbook gates, using a synthetic identity and a fictional-only allowlist |
 | Upstream | In-memory HTTP simulator supporting only the fixture's endpoints; seeded formula results, immediate writes |
 | Fault injection | One incorrect value/format write, followed by a successful restore request |
 
-Only the fixture's source/destination range-link metadata is simulated; no source
-values or destination updates propagate. Not simulated: actual Workiva DOM changes, OAuth, live range links, rate limits,
+The fixture simulates source/destination metadata and a fixed published source
+table. No source values or destination updates propagate. Not simulated: actual Workiva DOM changes, OAuth, live range links, rate limits,
 eventual consistency, async operation jobs, collaborative edits, process-crash
 recovery, rich-text editing, vision, external checks, publishing, or PDF proof.
 The demo is **not evidence of live integration compatibility or measured accuracy**.
+
+The content simulator uses Workiva's documented `rawValue` and nested
+`value.formula.calculatedValue` / `effectiveValue` shape. Formula text and result
+are distinct; raw numeric-looking strings are not asserted to be numeric types.
+Source formula ranges (including uniquely resolved same-workbook sheet names) use
+the selected cell's content revision. Incoming range links use their reported
+published revision. Missing, mismatched, incomplete, or denied source reads never
+fall back to latest. If the origin's content revision or cell changes during the
+read, all evidence is discarded. This is still **not an atomic snapshot of cells
+and links**. Named, external, dynamic, and unbounded references remain explicit;
+cell-level links and the full dependency chain are not traversed.
 
 The zero-display finding currently receives a column-majority review target even
 though the fixture does not establish an em-dash convention. This is an evaluation

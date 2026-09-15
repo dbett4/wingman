@@ -13,9 +13,9 @@ from test_demo import browser, demo_url  # shared disposable simulator fixtures
 @pytest.mark.parametrize("addr,kind,formula,calculated", [
     ("B7", "formula", "=SUM(B3:B6)+12500", 3746500),
     ("B8", "formula", "=#REF!", "#REF!"),
-    ("C8", "number", None, 0),
+    ("C8", "raw_value", None, 0),
     ("B1", "blank", None, ""),
-    ("B2", "number", None, 2025),
+    ("B2", "raw_value", None, 2025),
 ])
 def test_http_exact_cell_without_mutation(browser, addr, kind, formula, calculated):
     before = browser.state()
@@ -30,8 +30,8 @@ def test_http_exact_cell_without_mutation(browser, addr, kind, formula, calculat
     assert data["content"]["kind"] == kind
     assert data["content"]["formula"] == formula
     assert data["calculated"] == {"status": "observed", "value": calculated}
-    if kind == "number":
-        assert data["content"]["value"] == calculated
+    if kind == "raw_value":
+        assert data["content"]["value"] == str(calculated)
         assert data["nativeFormat"]["status"] == "observed"
     formula_source = data["source"]["formula"]
     if addr == "B7":
@@ -44,6 +44,7 @@ def test_http_exact_cell_without_mutation(browser, addr, kind, formula, calculat
                                   if addr == "B8" else {"status": "not_formula"})
     assert data["policy"] == {"status": "not_connected"}
     assert data["downstream"] == {"status": "not_inspected"}
+    assert data["sourceValuesRequested"] is False and "values" not in data["source"]
     after = browser.state()
     assert after["requestCount"] - before["requestCount"] == 6  # metadata + links + two exact read pairs
     assert after["sheets"] == before["sheets"]
@@ -62,7 +63,7 @@ def test_foreign_sheet_has_no_cell_evidence(browser):
 def test_http_linked_constant_is_not_an_unlinked_hardcode(browser):
     before = browser.state()
     data = browser.request("/api/inspect?spreadsheetId=de00&sheetId=de02&addr=B2")
-    assert data["content"]["value"] == 2025
+    assert data["content"]["value"] == "2025"
     assert data["source"]["formula"] == {"status": "not_formula"}
     links = data["source"]["rangeLinks"]
     assert links["status"] == "observed"
@@ -83,7 +84,9 @@ def transport(monkeypatch):
         "calculatedValue": 42,
         "effectiveFormats": {"valueFormat": {"valueFormatType": "NUMBER"}},
     }]]}}
-    content = {"data": [{"cells": [{"value": {"type": "formula", "formula": "=6*7"}}]}]}
+    content = {"revision": "revision-9",
+               "range": {"startRow": 11, "stopRow": 11, "startColumn": 2, "stopColumn": 2},
+               "data": [{"cells": [{"value": {"type": "formula", "formula": "=6*7"}}]}]}
     responses = {"meta": [meta], "native": [native, copy.deepcopy(native)],
                  "content": [content, copy.deepcopy(content)], "links": [{"data": []}]}
     calls = []
@@ -220,3 +223,41 @@ def test_link_failure_preserves_cell_evidence_without_claiming_absence(transport
     assert data["content"]["formula"] == "=6*7"
     assert data["source"]["rangeLinks"] == {"status": "unavailable", "items": []}
     assert "sensitive" not in json.dumps(data)
+
+
+@pytest.mark.parametrize("sheet,addr,revision,addresses,values", [
+    ("de01", "B7", "demo-current-0", ["B3", "B4", "B5", "B6"], ["2450000", "875000", "315000", "94000"]),
+    ("de02", "B2", "demo-published-3", ["C5", "D5", "C6", "D6", "C7", "D7", "C8", "D8"],
+     ["REVIEW NOTES", "", "Fiscal year", "2024", "Reporting basis", "Accrual", "Scope", "Fictional demonstration only"]),
+])
+def test_opt_in_http_sources_at_reported_revision_without_writes(browser, sheet, addr, revision, addresses, values):
+    before = browser.state()
+    data = browser.request(f"/api/inspect?spreadsheetId=de00&sheetId={sheet}&addr={addr}&sources=true")
+    assert data["sourceValuesRequested"] is True
+    group, = data["source"]["values"]["groups"]
+    assert group["revision"] == revision and group["status"] == "observed"
+    assert [cell["addr"] for cell in group["cells"]] == addresses
+    assert [cell["content"]["value"] for cell in group["cells"]] == values
+    after = browser.state()
+    assert after["sheets"] == before["sheets"] and after["events"] == []
+    assert after["requestCount"] == (8 if sheet == "de01" else 9)
+
+
+@pytest.mark.parametrize("failure", ["changed", "unavailable"])
+def test_origin_change_or_failed_recheck_discards_source_values(transport, monkeypatch, failure):
+    responses, _ = transport
+    returned = []
+
+    def read_sources(*args):
+        returned.append(args)
+        return {"status": "observed", "groups": [{"status": "observed", "cells": [{"value": "must be discarded"}]}]}
+
+    monkeypatch.setattr(inspector, "source_values", read_sources)
+    if failure == "changed":
+        responses["content"][1]["revision"] = "revision-10"
+    else:
+        responses["content"][1] = TimeoutError()
+    data = inspector.inspect_cell("book-a", "sheet-b", "C12", "synthetic-token", None, include_sources=True)
+    assert len(returned) == 1 and returned[0][2] == "revision-9"
+    assert "values" not in data["source"]
+    assert data["status"] == ("changed" if failure == "changed" else "partial")

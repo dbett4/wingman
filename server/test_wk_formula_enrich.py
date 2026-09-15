@@ -45,6 +45,17 @@ class FormulaEnrichTests(unittest.TestCase):
         self.assertIn("/1000", out[0]["formula"])
         self.assertEqual(enriched, 1)
 
+    def test_documented_raw_formula_is_not_its_formatted_result(self):
+        cells = [{"addr": "C12", "formula": None, "value": "12,340"}]
+        raw = [{"cells": [{"rawValue": "=SUM(C3:C11)", "value": {
+            "type": "formula", "formula": {"calculatedValue": "12340", "effectiveValue": "12,340"},
+        }}]}]
+        out, enriched = wk.enrich_cells_with_formulas(cells, "table", "tok", None, raw_cells=raw)
+        self.assertEqual(out[0]["formula"], "=SUM(C3:C11)")
+        self.assertEqual(enriched, 1)
+        self.assertIsNone(wk._formula_from_content_value(raw[0]["cells"][0]["value"]))
+        self.assertIsNone(wk._formula_from_content_value({"type": "plainText"}, "=literal text"))
+
     def test_enrich_noop_without_table(self):
         cells = [{"addr": "A1", "formula": None, "value": "x"}]
         out, enriched = wk.enrich_cells_with_formulas(cells, None, "tok", None)

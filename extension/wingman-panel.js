@@ -1139,27 +1139,30 @@
   function paintInspection() {
     WingmanInspector.render(panelUi.body, inspectContext || currentInspection(), inspectState, inspectSelectedCell);
   }
-  function inspectSelectedCell() {
+  function inspectSelectedCell(readSources) {
+    readSources = readSources === true;
     if (!guardExtensionContext()) return;
     syncInspection();
     var target = inspectContext.target;
     if (!target) return;
     var request = ++inspectRequest;
-    inspectState = { loading: true };
+    inspectState = { loading: true, sources: readSources };
     paintInspection();
     var query = ["spreadsheetId", "sheetId", "addr"].map(function (k) {
       return k + "=" + encodeURIComponent(target[k]);
     }).join("&");
+    if (readSources) query += "&sources=true";
     function stillCurrent() {
       syncInspection();
       return !extensionInvalidated && open && activeTab === "inspect" && request === inspectRequest;
     }
     svc("/api/inspect?" + query, { cache: "no-store" }).then(function (data) {
       if (!stillCurrent()) return;
-      if (!WingmanInspector.matches(target, data.target) || data.readOnly !== true) {
+      if (!WingmanInspector.matches(target, data.target) || data.readOnly !== true ||
+          (data.sourceValuesRequested === true) !== readSources) {
         throw new Error("The response did not match the selected cell. No evidence displayed.");
       }
-      inspectState = { data: data };
+      inspectState = { data: data, sources: readSources };
       paintInspection();
     }).catch(function (error) {
       if (!stillCurrent()) return;

@@ -9,10 +9,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 import re
-from urllib.parse import quote, urlsplit
+from urllib.parse import urlsplit
 
 import wk_client as wk
-from cell_sources import formula_references, range_links
+from cell_sources import formula_references, range_links, read_cells, source_values, stored_content
 
 
 def validate_target(spreadsheet_id, sheet_id, addr):
@@ -24,7 +24,7 @@ def validate_target(spreadsheet_id, sheet_id, addr):
 
 
 def _sheet(spreadsheet_id, sheet_id, token, ctx):
-    path = f"/spreadsheets/{spreadsheet_id}/sheets?$maxperpage=500"
+    path = f"/spreadsheets/{spreadsheet_id}/sheets?$maxpagesize=500"
     for _ in range(50):
         raw = wk._get_url(path, token, ctx, version="2026-01-01")
         for sheet in raw.get("data", []):
@@ -58,15 +58,7 @@ def _content(table_id, addr, token, ctx):
     if not table_id:
         raise ValueError("No content table identified")
     row, col = wk.rc_from_a1(addr)
-    raw = wk._get(
-        f"/content/tables/{quote(table_id, safe='')}/cells"
-        f"?startRow={row}&stopRow={row}&startColumn={col}&stopColumn={col}",
-        token, ctx, version="2026-01-01",
-    )
-    rows = raw.get("data", [])
-    if raw.get("@nextLink") or len(rows) != 1 or len(rows[0].get("cells", [])) != 1:
-        raise ValueError("Content read was incomplete")
-    return rows[0]["cells"][0]["value"]
+    return read_cells(table_id, (row, row, col, col), token, ctx)
 
 
 def _observe(read):
@@ -77,11 +69,12 @@ def _observe(read):
         return {"status": "unavailable", "reason": type(exc).__name__}
 
 
-def inspect_cell(spreadsheet_id, sheet_id, addr, token, ctx):
+def inspect_cell(spreadsheet_id, sheet_id, addr, token, ctx, *, include_sources=False):
     validate_target(spreadsheet_id, sheet_id, addr)
     target = {"spreadsheetId": spreadsheet_id, "sheetId": sheet_id, "addr": addr}
     result = {
         "target": target, "readOnly": True, "status": "unavailable",
+        "sourceValuesRequested": include_sources,
         "observedAt": datetime.now(timezone.utc).isoformat(),
         "policy": {"status": "not_connected"},
         "downstream": {"status": "not_inspected"},
@@ -94,20 +87,27 @@ def inspect_cell(spreadsheet_id, sheet_id, addr, token, ctx):
         return result
     sheet = meta["value"]
     result["sheetName"] = sheet.get("name")
-    result["revision"] = sheet.get("revision")
     table = sheet.get("table")
+    result["revision"] = table.get("revision") if isinstance(table, dict) else None
     table_id = table.get("table") if isinstance(table, dict) else None
     read_cell = lambda: _cell(spreadsheet_id, sheet_id, addr, token, ctx)
     read_content = lambda: _content(table_id, addr, token, ctx)
     cell, content = _observe(read_cell), _observe(read_content)
     links = range_links(table_id, addr, token, ctx) if cell["status"] == "observed" else {"status": "not_inspected"}
+    decoded = (stored_content(content["value"]["data"][0]["cells"][0])
+               if content["status"] == "observed" else {"status": "unavailable"})
+    formula = formula_references(decoded)
+    values = None
+    if include_sources and cell["status"] == content["status"] == "observed":
+        revision = content["value"]["revision"]
+        values = source_values(spreadsheet_id, table_id, revision, formula, links, token, ctx)
     cell_after, content_after = _observe(read_cell), _observe(read_content)
     # Python equality equates False with 0; native content types must remain distinct.
     if any(before["status"] == after["status"] == "observed"
            and json.dumps(before, sort_keys=True) != json.dumps(after, sort_keys=True)
            for before, after in ((cell, cell_after), (content, content_after))):
         result["status"] = "changed"
-        result["warnings"].append("The cell changed during inspection. Inspect again; mixed evidence was discarded.")
+        result["warnings"].append("The cell or its content revision changed during inspection. Inspect again; mixed evidence was discarded.")
         return result
     if cell["status"] != "observed" or cell_after["status"] != "observed":
         result["warnings"].append("Calculated value and format could not be read consistently. Inspect again.")
@@ -123,15 +123,11 @@ def inspect_cell(spreadsheet_id, sheet_id, addr, token, ctx):
         result["content"] = {"status": "unavailable"}
         result["warnings"].append("Stored content is unavailable. A calculated number does not prove a hardcode.")
     else:
-        result["content"] = content
-        value = content["value"]
-        formula = wk._formula_from_content_value(value)
-        kind = ("formula" if formula else "blank" if value in (None, "") else
-                "boolean" if isinstance(value, bool) else
-                "number" if isinstance(value, (int, float)) else
-                "text" if isinstance(value, str) else "unknown")
-        result["content"].update(kind=kind, formula=formula)
+        result["content"] = decoded
+        result["contentRevision"] = content["value"]["revision"]
     result["source"] = {"formula": formula_references(result["content"]), "rangeLinks": links}
+    if values is not None and content["status"] == content_after["status"] == "observed":
+        result["source"]["values"] = values
     result["status"] = "observed" if all(
         result[key]["status"] == "observed" for key in ("content", "calculated", "nativeFormat")
     ) else "partial"

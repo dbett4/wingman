@@ -123,7 +123,9 @@ class HandlerRouteTests(unittest.TestCase):
             code, _ = self._request("/api/inspect?spreadsheetId=x&sheetId=y&addr=B7", token=False)
             self.assertEqual(code, 403)
             for query in ("spreadsheetId=x&sheetId=y&addr=B7:C8", "spreadsheetId=x&sheetId=y&addr=B0",
-                          "spreadsheetId=../x&sheetId=y&addr=B7", "spreadsheetId=x&addr=B7"):
+                          "spreadsheetId=../x&sheetId=y&addr=B7", "spreadsheetId=x&addr=B7",
+                          "spreadsheetId=x&sheetId=y&addr=B7&sources=all",
+                          "spreadsheetId=x&sheetId=y&addr=B7&sources=true&sources=false"):
                 code, _ = self._request("/api/inspect?" + query)
                 self.assertEqual(code, 400, query)
             token.assert_not_called()

@@ -99,17 +99,26 @@ class Workbook:
         self.request_count += 1
         url = urlparse(raw_path)
         path, query = url.path, parse_qs(url.query)
+        current_revision = "demo-current-" + str(len(self.events))
         if method == "GET" and path == f"/spreadsheets/{WORKBOOK}/sheets":
-            return {"data": [{"id": s["id"], "name": s["name"], "table": {"table": s["id"]}}
+            if query.get("$revision", [current_revision]) != [current_revision]:
+                raise ValueError("Revision is not part of this simulation")
+            return {"data": [{"id": s["id"], "name": s["name"], "table": {"table": s["id"], "revision": current_revision}}
                              for s in self.sheets]}
         if method == "GET":
             for link in FIXTURE["publishedRangeLinks"]:
                 if (path == f"/content/tables/{link['table']}/rangeLinks/{link['id']}"
                         and query.get("$revision") == [link["revision"]]):
                     return copy.deepcopy(link)
-        content = re.fullmatch(r"/content/tables/(de0[12])/(cells|rangeLinks)", path)
+        content = re.fullmatch(r"/content/tables/(de0[12]|demo-notes-table)/(cells|rangeLinks|properties)", path)
         if method == "GET" and content:
-            sheet = self.sheet(content[1])
+            published = FIXTURE["publishedTables"].get(content[1])
+            sheet = published or self.sheet(content[1])
+            revision = published["revision"] if published else current_revision
+            if query.get("$revision", [revision]) != [revision]:
+                raise ValueError("Revision is not part of this simulation")
+            if content[2] == "properties":
+                return {"id": content[1], "name": sheet["name"], "revision": revision}
             if content[2] == "rangeLinks":
                 return {"data": copy.deepcopy(sheet["rangeLinks"])}
             r0, r1, c0, c1 = [int(query[k][0]) for k in ("startRow", "stopRow", "startColumn", "stopColumn")]
@@ -117,11 +126,21 @@ class Workbook:
             for ri in range(r0, r1 + 1):
                 row = []
                 for ci in range(c0, c1 + 1):
-                    cell = sheet["cells"][ri][ci]
-                    formula = sheet["formulas"].get(wk.a1(ri, ci))
-                    row.append({"value": {"type": "formula", "formula": formula} if formula else cell["value"]})
+                    if published:
+                        pr, pc = ri - sheet["startRow"], ci - sheet["startColumn"]
+                        if pr < 0 or pc < 0:
+                            raise ValueError("Outside published range")
+                        value = sheet["rows"][pr][pc]
+                        formula = None
+                    else:
+                        value = sheet["cells"][ri][ci]["value"]
+                        formula = sheet["formulas"].get(wk.a1(ri, ci))
+                    row.append({"rawValue": formula or str(value), "value": {
+                        "type": "formula", "formula": {"calculatedValue": str(value), "effectiveValue": str(value)}}
+                        if formula else {"type": "plainText", "plainText": {"effectiveValue": str(value)}}})
                 result.append({"cells": row})
-            return {"data": result}
+            return {"data": result, "revision": revision,
+                    "range": dict(zip(("startRow", "stopRow", "startColumn", "stopColumn"), (r0, r1, c0, c1)))}
         match = re.fullmatch(rf"/platform/v1/spreadsheets/{WORKBOOK}/sheets/(de0[12])/(sheetdata|update|values/([A-Z]+[1-9][0-9]*))", path)
         if not match:
             raise ValueError("This endpoint or workbook is not part of the simulation")

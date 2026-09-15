@@ -35,7 +35,7 @@ def formula_references(content):
     than extracting a misleading A1 suffix from an external/structured/3-D reference.
     This deliberately reports text_only even if every token is recognized.
     """
-    if content.get("status") != "observed":
+    if content.get("status") != "observed" or content.get("kind") == "unknown":
         return {"status": "unavailable"}
     formula = content.get("formula")
     if not formula:
@@ -165,3 +165,136 @@ def range_links(table_id, addr, token, ctx):
         except Exception:
             item["resolution"] = "unavailable"
     return {"status": "observed", "items": items}
+
+
+def stored_content(cell):
+    """Keep raw content separate from formatted/computed strings and numeric types."""
+    value = cell["value"]
+    formula = wk._formula_from_content_value(value, cell.get("rawValue"))
+    if isinstance(value, dict) and "rawValue" in cell:
+        native_type = value.get("type")
+        value = cell["rawValue"]
+        kind = ("formula" if formula else "linked_value" if native_type == "destinationLink" else
+                "unknown" if native_type not in ("plainText", "richText") else
+                "blank" if value == "" else "raw_value")
+    else:
+        kind = ("formula" if formula else "blank" if value in (None, "") else
+                "boolean" if isinstance(value, bool) else "number" if isinstance(value, (int, float)) else
+                "text" if isinstance(value, str) else "unknown")
+    return {"status": "observed", "value": value, "kind": kind, "formula": formula}
+
+
+def read_cells(table_id, bounds, token, ctx, revision=None):
+    """One complete bounded content read. Never sample or substitute a newer revision."""
+    r0, r1, c0, c1 = bounds
+    count = (r1 - r0 + 1) * (c1 - c0 + 1)
+    if not 0 < count <= 100:
+        raise ValueError("Range exceeds the 100-cell read limit")
+    query = dict(zip(("startRow", "stopRow", "startColumn", "stopColumn"), bounds))
+    if revision is not None:
+        query["$revision"] = _identity(revision)
+    raw = wk._get(f"/content/tables/{quote(_identity(table_id), safe='')}/cells?{urlencode(query)}",
+                  token, ctx, version="2026-01-01")
+    observed_revision = _identity(raw["revision"])
+    rows = raw["data"]
+    if (raw.get("@nextLink") or _bounds(raw) != bounds or len(rows) != r1 - r0 + 1
+            or (revision is not None and observed_revision != revision)
+            or any(len(row["cells"]) != c1 - c0 + 1 for row in rows)):
+        raise ValueError("Incomplete or mismatched content range/revision")
+    for row in rows:
+        for cell in row["cells"]:
+            if not isinstance(cell, dict) or "value" not in cell:
+                raise ValueError("Missing cell content")
+    return {"revision": observed_revision, "data": rows}
+
+
+def _a1_bounds(address):
+    if not re.fullmatch(rf"{_CELL}(?::{_CELL})?", address, re.I):
+        raise ValueError("Only bounded A1 ranges can be read")
+    ends = address.replace("$", "").upper().split(":")
+    r0, c0 = wk.rc_from_a1(ends[0])
+    r1, c1 = wk.rc_from_a1(ends[-1])
+    return _bounds({"range": dict(zip(("startRow", "stopRow", "startColumn", "stopColumn"), (r0, r1, c0, c1)))})
+
+
+def _named_table(spreadsheet_id, name, revision, token, ctx):
+    """Resolve a unique same-workbook sheet at the selected content revision."""
+    path = f"/spreadsheets/{quote(spreadsheet_id, safe='')}/sheets?{urlencode({'$revision': revision})}"
+    seen, matches = set(), []
+    for _ in range(50):
+        url, base = urlsplit(path), urlsplit(wk._base())
+        if ((url.netloc and url.netloc != base.netloc) or (url.scheme and url.scheme != base.scheme)
+                or path in seen):
+            raise ValueError("Untrusted or repeated sheet pagination")
+        seen.add(path)
+        raw = wk._get_url(path, token, ctx, version="2026-01-01")
+        matches.extend(sheet for sheet in raw["data"] if sheet["name"].casefold() == name.casefold())
+        path = raw.get("@nextLink")
+        if path is None or path == "":
+            if len(matches) != 1:
+                raise ValueError("Sheet name missing or ambiguous")
+            if matches[0]["table"]["revision"] != revision:
+                raise ValueError("Sheet metadata revision mismatch")
+            return _identity(matches[0]["table"]["table"])
+    raise ValueError("Sheet metadata incomplete")
+
+
+def source_values(spreadsheet_id, table_id, revision, formula, links, token, ctx):
+    """Opt-in direct evidence only: 100 cells across at most 10 range reads."""
+    groups, used_cells, used_ranges = [], 0, 0
+    candidates = [{"reference": ref, "basis": "selected_revision", "revision": revision,
+                   "tableId": table_id} for ref in formula.get("references", [])]
+    for link in links.get("items", []):
+        if link["direction"] == "destination":
+            candidates.append({"reference": link.get("sourceRange"), "basis": "published_revision",
+                               "revision": link["source"]["revision"], "tableId": link["source"]["table"]})
+    for candidate in candidates:
+        group = dict(candidate, status="unavailable")
+        groups.append(group)
+        reference = candidate["reference"]
+        if not reference:
+            group["reason"] = "Source range is unresolved; no values read."
+            continue
+        address = reference.rsplit("!", 1)[-1]
+        try:
+            bounds = _a1_bounds(address)
+        except ValueError:
+            group["reason"] = "Unbounded or unsupported range; no values read."
+            continue
+        r0, r1, c0, c1 = bounds
+        count = (r1 - r0 + 1) * (c1 - c0 + 1)
+        if used_cells + count > 100 or used_ranges >= 10:
+            group.update(status="limited", reason="100-cell / 10-range limit; this range was not sampled.")
+            continue
+        used_cells += count
+        used_ranges += 1
+        try:
+            rev = _identity(candidate["revision"])
+            if "!" in reference and candidate["basis"] == "selected_revision":
+                name = reference.rsplit("!", 1)[0]
+                if name.startswith("'"):
+                    name = name[1:-1].replace("''", "'")
+                group["tableId"] = _named_table(spreadsheet_id, name, rev, token, ctx)
+            table = quote(_identity(group["tableId"]), safe="")
+            props = wk._get(f"/content/tables/{table}/properties?{urlencode({'$revision': rev})}",
+                            token, ctx, version="2026-01-01")
+            if props["id"] != group["tableId"] or props["revision"] != rev:
+                raise ValueError("Table identity or revision mismatch")
+            raw = read_cells(group["tableId"], bounds, token, ctx, rev)
+            cells = []
+            for ri, row in enumerate(raw["data"]):
+                for ci, cell in enumerate(row["cells"]):
+                    content = stored_content(cell)
+                    value = cell["value"]
+                    computed = value.get("formula") if isinstance(value, dict) and value.get("type") == "formula" else None
+                    calculated = ({"status": "observed", "value": computed["calculatedValue"]}
+                                  if isinstance(computed, dict) and "calculatedValue" in computed else
+                                  {"status": "unavailable"})
+                    cells.append({"addr": wk.a1(r0 + ri, c0 + ci), "content": content, "calculated": calculated})
+            group.update(status="observed", name=props.get("name"), range=_range_text(bounds), cells=cells)
+        except Exception:
+            group["reason"] = "Source could not be read at this revision; no latest-revision substitute."
+    incomplete = (formula.get("status") == "unavailable" or bool(formula.get("unresolved"))
+                  or links.get("status") != "observed" or any(group["status"] != "observed" for group in groups))
+    return {"status": "partial" if incomplete else "observed", "groups": groups,
+            "cellLimit": 100, "rangeLimit": 10}

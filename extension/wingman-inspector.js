@@ -72,9 +72,11 @@
     page.appendChild(button);
     var feedback = el("p", "wi-description");
     feedback.setAttribute("role", "status");
-    feedback.textContent = state.error || (state.loading ? "Reading " + target.addr + " and its link metadata. No workbook scan or changes."
+    feedback.textContent = state.error || (state.loading ? (state.sources
+      ? "Refreshing " + target.addr + " and reading direct sources. Up to 100 cells / 10 ranges; no changes."
+      : "Reading " + target.addr + " and its link metadata. No workbook scan or changes.")
       : data && data.status === "unavailable" ? "No cell evidence returned. Inspect again to retry."
-      : data && data.status === "changed" ? "Cell changed while reading. Inspect again."
+      : data && data.status === "changed" ? "Cell or content revision changed while reading. Inspect again."
       : data ? "Read at " + new Date(data.observedAt).toLocaleTimeString() + ". Inspect again after edits."
         : "See the content, result and format separately. No changes will be made.");
     page.appendChild(feedback);
@@ -99,6 +101,8 @@
           text: "This cell stores text. No formatting change is proposed.",
           blank: "The stored content is blank. This alone does not establish a broken link.",
           boolean: "This cell stores a boolean value, not a financial amount.",
+          raw_value: "Workiva returns this raw content as text. That does not establish its numeric type or whether it should be a formula.",
+          linked_value: "Workiva identifies a cell-level linked value. This link's full source chain is not traced here.",
         };
         var explanation = explanations[data.content && data.content.kind];
         if (explanation === undefined) explanation = "Stored content could not be classified. No hardcode or formula judgment is made.";
@@ -107,7 +111,9 @@
       if (data.content || data.calculated) {
         var sources = el("details", "wi-sources wi-details");
         sources.setAttribute("aria-label", "References and links");
+        sources.open = !!state.sources;
         var source = data.source || {}, formula = source.formula || {}, links = source.rangeLinks || {};
+        var sourceValues = source.values;
         var items = links.items || [];
         var sourceSummary = el("summary", null, "References & links");
         var formulaSummary = formula.status === "text_only"
@@ -122,6 +128,7 @@
         if (items.some(function (link) { return link.direction === "destination" && link.resolution !== "observed"; })) {
           linkSummary += " · source unresolved";
         }
+        if (sourceValues && sourceValues.status !== "observed") linkSummary += " · source reads incomplete";
         sourceSummary.appendChild(el("span", "wi-source-summary", formulaSummary + " · " + linkSummary));
         sources.appendChild(sourceSummary);
         var refs = el("dl", "wi-evidence");
@@ -130,11 +137,57 @@
           if (formula.literalNumbers.length) row(refs, "Literal numbers", formula.literalNumbers.join(" · "), true);
           if (formula.unresolved.length) row(refs, "Not resolved", formula.unresolved.join("\n"), true);
           sources.appendChild(refs);
-          sources.appendChild(el("p", "wi-description", "Formula text only. Referenced cells were not read; literal numbers are not automatically errors."));
+          sources.appendChild(el("p", "wi-description", sourceValues
+            ? "Addresses extracted from formula text. Literal numbers are not automatically errors."
+            : "Formula text only. Referenced cells were not read; literal numbers are not automatically errors."));
         } else {
           sources.appendChild(el("p", "wi-description", formula.status === "not_formula"
             ? "No stored formula. Workiva links are checked separately."
             : "Formula references could not be inspected."));
+        }
+        var canReadSources = (formula.references || []).length || items.some(function (link) { return link.direction === "destination"; });
+        if (canReadSources) {
+          var sourceButton = el("button", "wm-btn wi-read-sources", sourceValues ? "Refresh source values" : "Read source values");
+          sourceButton.type = "button";
+          sourceButton.onclick = function () { inspect(true); };
+          sources.appendChild(sourceButton);
+          sources.appendChild(el("p", "wi-description", "Up to 100 cells / 10 ranges. Formula references use the selected content revision; incoming links use their reported published revision."));
+        }
+        if (sourceValues) {
+          if (sourceValues.status !== "observed") sources.appendChild(el("p", "wi-warning", "Direct source reads are incomplete. Unresolved references or unavailable links remain above and below."));
+          sourceValues.groups.forEach(function (group) {
+            var block = el("details", "wi-details wi-source-values");
+            block.open = sourceValues.groups.length === 1;
+            block.appendChild(el("summary", null, (group.name || "Source table") + " · " + (group.reference || "Range unresolved")));
+            block.appendChild(el("p", "wi-description", (group.basis === "published_revision" ? "Published revision: " : "Selected content revision: ") + (group.revision || "Not available")));
+            if (group.status !== "observed") {
+              block.appendChild(el("p", "wi-warning", group.reason));
+            } else {
+              var table = el("table", "wi-values");
+              table.setAttribute("aria-label", "Source cells in " + group.range);
+              var tr = el("tr");
+              ["Cell", "Raw content"].forEach(function (label) { var th = el("th", null, label); th.scope = "col"; tr.appendChild(th); });
+              var thead = el("thead"); thead.appendChild(tr); table.appendChild(thead);
+              var tbody = el("tbody");
+              group.cells.forEach(function (cell) {
+                var cellRow = el("tr"), address = el("th", null, cell.addr), value = el("td");
+                address.scope = "row";
+                cellRow.appendChild(address);
+                value.appendChild(el("code", null, valueText(cell.content)));
+                if (cell.content.kind === "formula") value.appendChild(el("div", "wi-source-result", "Formula result: " + valueText(cell.calculated)));
+                cellRow.appendChild(value);
+                tbody.appendChild(cellRow);
+              });
+              table.appendChild(tbody); block.appendChild(table);
+            }
+            var identity = el("dl", "wi-evidence");
+            row(identity, "Source table ID", group.tableId, true);
+            block.appendChild(identity);
+            sources.appendChild(block);
+          });
+          sources.appendChild(el("p", "wi-description", "Raw content and formula results are not presentation-formatted. These are direct reads, not a full source chain or a reconciliation."));
+        } else if (data.sourceValuesRequested) {
+          sources.appendChild(el("p", "wi-warning", "Source values were not retained because the selected content could not be rechecked. Inspect again."));
         }
         var linkStatus = links.status === "observed"
           ? (items.length ? "Range-link metadata read for this cell." : "No range link covers this cell in the returned table metadata.")
@@ -155,7 +208,7 @@
             row(fields, "Source range-link ID", link.source.rangeLink, true);
             row(fields, "Reported source revision", link.source.revision, true);
             row(fields, "Source range lookup", link.resolution === "observed"
-              ? "Read at the reported revision; source values not read"
+              ? "Range metadata read at the reported revision"
               : "Not available at the reported revision; no latest-revision substitute");
           } else {
             row(fields, "Last published revision", link.revision || "Not provided", true);
@@ -176,6 +229,7 @@
       row(metadata, "Workbook ID", target.spreadsheetId, true);
       row(metadata, "Sheet ID", target.sheetId, true);
       row(metadata, "Metadata revision", data.revision || "Not provided; not a pinned snapshot", true);
+      row(metadata, "Content revision", data.contentRevision || "Not available", true);
       row(metadata, "Format fields", valueText(data.nativeFormat), true);
       detail.appendChild(metadata);
       detail.appendChild(el("p", "wi-description", "Page identity is not proof of client, fiscal period, or working-copy authority. Rendered document text is not inspected."));
@@ -187,7 +241,7 @@
     page.appendChild(scope);
     if (data) page.appendChild(detail);
     body.replaceChildren(page);
-    if (hadFocus) (button.disabled ? page : button).focus();
+    if (hadFocus) (button.disabled ? page : sourceButton && state.sources ? sourceButton : button).focus();
   }
 
   var styles = ".wi-inspector{padding:16px;overflow-wrap:anywhere}.wi-inspector *{box-sizing:border-box}" +
@@ -197,6 +251,7 @@
     ".wi-evidence,.wi-scope{margin:0}.wi-row{padding:5px 0;border-top:1px solid var(--border-soft)}.wi-row dt{font-size:11px;color:var(--muted);margin-bottom:4px}.wi-row dd{margin:0;font-size:13px}.wi-row code{font:12px/1.6 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere}" +
     ".wi-warning{font-size:12px;line-height:1.55;color:var(--muted);border-left:2px solid var(--warn);padding-left:10px;margin:12px 0}.wi-details{margin:8px 0 0}.wi-details summary{min-height:40px;cursor:pointer;display:list-item;padding:10px 0;color:var(--accent-text)}" +
     ".wi-sources{margin:8px 0;border-top:1px solid var(--border-soft);border-bottom:1px solid var(--border-soft)}.wi-sources>summary{font-size:13px;line-height:1.5}.wi-source-summary{display:block;font-size:11px;color:var(--muted);margin-top:4px}.wi-link{border-top:1px solid var(--border-soft)}.wi-link summary{font-size:12px;line-height:1.5}" +
+    ".wi-read-sources{min-height:40px;width:100%}.wi-values{border-collapse:collapse;width:100%;table-layout:fixed;margin-bottom:12px}.wi-values th,.wi-values td{border-top:1px solid var(--border-soft);padding:7px 4px;text-align:left;vertical-align:top;font-size:12px}.wi-values th:first-child{width:54px}.wi-values th{font-weight:500;color:var(--muted)}.wi-values code{white-space:pre-wrap;font:12px/1.5 ui-monospace,monospace}.wi-source-result{color:var(--muted);margin-top:4px}.wi-source-values{border-top:1px solid var(--border-soft)}" +
     ".wi-details summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.wi-scope .wi-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:6px 0}.wi-scope dt{margin:0}.wi-scope dd{font-size:12px;color:var(--muted)}" +
     ".wm-panel.wi-mode .wm-tab-actions,.wm-panel.wi-mode .wm-ctx,.wm-panel.wi-mode .wm-operator-warnings,.wm-panel.wi-mode .wm-thermo,.wm-panel.wi-mode .wm-preset{display:none!important}" +
     ".wm-panel.wi-mode{max-width:calc(100vw - 28px)}.wm-panel.wi-mode .wm-tab{min-height:40px}.wm-panel.wi-mode .wm-head .wm-x{min-height:32px;min-width:32px}.wm-panel.wi-mode .wm-reset-size,.wm-panel.wi-mode .wm-wide-toggle{display:none}";

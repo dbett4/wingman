@@ -488,10 +488,13 @@ class Handler(BaseHTTPRequestHandler):
                 ss, sh, addr = (q.get(key, [""])[0] for key in ("spreadsheetId", "sheetId", "addr"))
                 try:
                     inspector.validate_target(ss, sh, addr)
+                    if q.get("sources", ["false"]) not in (["false"], ["true"]):
+                        raise ValueError("sources must be true or false")
                 except ValueError as exc:
                     self._send(400, {"error": str(exc)})
                     return
-                self._send(200, inspector.inspect_cell(ss, sh, addr, _token(), _ctx))
+                self._send(200, inspector.inspect_cell(ss, sh, addr, _token(), _ctx,
+                                                      include_sources=q.get("sources") == ["true"]))
             elif path == "/scan":
                 ss = q.get("spreadsheetId", [""])[0]
                 sh = q.get("sheetId", [""])[0]

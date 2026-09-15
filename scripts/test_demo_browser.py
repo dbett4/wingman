@@ -147,12 +147,20 @@ def test_inspector_evidence_and_navigation(demo_url):
             if addr == "B7":
                 check(f"{root}.querySelector('.wi-sources .wi-evidence').textContent === 'Addresses in formulaB3:B6Literal numbers12500'")
                 check(f"{root}.querySelector('.wi-link summary').textContent === 'Source range B3:C7 includes this cell'")
+                check(f"!{root}.querySelector('.wi-values')")
+                run("eval", f"{root}.querySelector('.wi-read-sources').focus()")
+                run("press", "Enter")
+                run("wait", "--fn", ready + f" && !!{root}.querySelector('.wi-values')")
+                check(f"{root}.activeElement.classList.contains('wi-read-sources')")
+                check(f"{root}.querySelector('.wi-sources').open")
+                check(f"Array.from({root}.querySelectorAll('.wi-values tbody tr')).map(e => e.textContent).join('|') === 'B32450000|B4875000|B5315000|B694000'")
+                check(f"{root}.querySelector('.wi-source-values').textContent.includes('demo-current-0')")
             elif addr == "B8":
                 check(f"{root}.querySelector('.wi-sources').textContent.includes('Not resolved#REF!')")
             else:
                 check(f"{root}.querySelector('.wi-sources').textContent.includes('No range link covers this cell')")
         check("document.querySelectorAll('.trace-row').length === 0")
-        check("document.getElementById('request-count').textContent === '24 simulated API requests'")
+        check("document.getElementById('request-count').textContent === '32 simulated API requests'")
         run("find", "role", "button", "click", "--name", "Review notes", "--exact")
         run("wait", "--fn", f"{root}.querySelector('.wi-address').textContent === 'B2'")
         click(".wi-inspect")
@@ -163,6 +171,11 @@ def test_inspector_evidence_and_navigation(demo_url):
         run("press", "Enter")
         check(f"{root}.querySelector('.wi-link').open && {root}.querySelector('.wi-link').textContent.includes('demo-published-3')")
         check(f"{root}.querySelector('.wi-sources').textContent.includes('No stored formula')")
+        click(".wi-read-sources")
+        run("wait", "--fn", ready + f" && !!{root}.querySelector('.wi-values')")
+        check(f"{root}.querySelector('.wi-evidence dd').textContent === '2025'")
+        check(f"{root}.querySelector('.wi-values tbody tr:nth-child(4)').textContent === 'D62024'")
+        check(f"{root}.querySelector('.wi-source-values').textContent.includes('Published revision: demo-published-3')")
         run("find", "role", "button", "click", "--name", "Statement of activities", "--exact")
         run("click", '#grid [data-addr="B1"] button')
         run("wait", "--fn", f"{root}.querySelector('.wi-address').textContent === 'B1'")
@@ -185,6 +198,7 @@ def test_inspector_evidence_and_navigation(demo_url):
           window.answer = (entry, value, source) => {
             var q = new URL(entry.msg.path, location.origin).searchParams;
             entry.cb({ok:true, data:{target:Object.fromEntries(q), readOnly:true, status:'observed',
+              sourceValuesRequested:q.get('sources') === 'true',
               observedAt:new Date().toISOString(), sheetName:'Synthetic reply',
               content:{status:'observed', kind:'number', value}, calculated:{status:'observed', value},
               nativeFormat:{status:'observed', value:{valueFormatType:'NUMBER'}}, source, warnings:[]}});
@@ -200,6 +214,39 @@ def test_inspector_evidence_and_navigation(demo_url):
         click(".wi-inspect")
         run("eval", "answer(pending.pop(), 123); answer(pending.shift(), 999)")
         run("wait", "--fn", f"{root}.querySelector('.wi-evidence dd')?.textContent === '123'")
+
+        # A wider source request is still bound to this selection, and requires a scope echo.
+        click(".wi-inspect")
+        run("eval", "answer(pending.shift(), 123, {formula:{status:'text_only',references:['C11'],literalNumbers:[],unresolved:[]}})")
+        click(".wi-sources > summary")
+        click(".wi-read-sources")
+        check("pending[0].msg.path.endsWith('&sources=true')")
+        run("click", '#grid [data-addr="C8"] button')
+        run("wait", "--fn", f"{root}.querySelector('.wi-address').textContent === 'C8'")
+        run("eval", "answer(pending.shift(), 999)")
+        check(f"!{root}.querySelector('.wi-evidence') && !{root}.querySelector('.wi-values')")
+        run("click", '#grid [data-addr="B1"] button')
+        run("wait", "--fn", f"{root}.querySelector('.wi-address').textContent === 'B1'")
+        click(".wi-inspect")
+        run("eval", "answer(pending.shift(), 123, {formula:{status:'text_only',references:['C11'],literalNumbers:[],unresolved:[]}})")
+        click(".wi-sources > summary")
+        click(".wi-read-sources")
+        run("eval", "var entry=pending.shift(); entry.msg.path=entry.msg.path.replace('&sources=true',''); answer(entry,999)")
+        check(f"{root}.querySelector('.wi-inspector').textContent.includes('did not match') && !{root}.querySelector('.wi-values')")
+
+        # Source formulas/results and failures have their own visible, escaped evidence.
+        click(".wi-inspect")
+        run("eval", "window.sourceReply={formula:{status:'text_only',references:['C11'],literalNumbers:[],unresolved:[]},rangeLinks:{status:'observed',items:[]}}; answer(pending.shift(),123,sourceReply)")
+        click(".wi-sources > summary")
+        click(".wi-read-sources")
+        run("eval", "sourceReply.values={status:'observed',groups:[{status:'observed',reference:'C11',range:'C11',tableId:'<img src=x>',revision:'revision-9',basis:'selected_revision',cells:[{addr:'C11',content:{status:'observed',kind:'formula',formula:'=SUM(C1:C10)'},calculated:{status:'observed',value:'-12340'}}]}]}; answer(pending.shift(),123,sourceReply)")
+        check(f"{root}.querySelector('.wi-values td').textContent === '=SUM(C1:C10)Formula result: -12340'")
+        check(f"!{root}.querySelector('.wi-source-values img')")
+        click(".wi-read-sources")
+        run("eval", "sourceReply.values.status='partial'; sourceReply.values.groups[0]={status:'unavailable',reference:'C11',tableId:'table',revision:'revision-9',basis:'selected_revision',reason:'Source unavailable; no latest-revision substitute.'}; answer(pending.shift(),123,sourceReply)")
+        check(f"!{root}.querySelector('.wi-values') && {root}.querySelector('.wi-source-values').textContent.includes('no latest-revision substitute')")
+        click(".wi-sources > summary")
+        check(f"{root}.querySelector('.wi-source-summary').textContent.includes('source reads incomplete')")
 
         # URL-only navigation with unchanged A1 must clear evidence without another read.
         run("eval", "history.replaceState(null, '', '#/spreadsheet/de00/sheet/de02')")

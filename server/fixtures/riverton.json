@@ -46,6 +46,16 @@
       }]
     }
   ],
+  "publishedTables": {
+    "demo-notes-table": {
+      "name": "Published reporting notes",
+      "revision": "demo-published-3",
+      "startRow": 4,
+      "startColumn": 2,
+      "rows": [["REVIEW NOTES", ""], ["Fiscal year", 2024],
+               ["Reporting basis", "Accrual"], ["Scope", "Fictional demonstration only"]]
+    }
+  },
   "publishedRangeLinks": [
     {
       "id": "demo-notes-source", "table": "demo-notes-table", "type": "source", "revision": "demo-published-3",

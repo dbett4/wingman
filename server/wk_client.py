@@ -160,12 +160,12 @@ def rc_from_a1(addr):
     return int(digits) - 1, col - 1
 
 
-def _formula_from_content_value(val):
-    """Extract a formula string from a content/tables cell value object."""
+def _formula_from_content_value(val, raw_value=None):
+    """2026 formulas live in rawValue; retain the legacy string-formula shape."""
     if not isinstance(val, dict):
         return None
     if val.get("type") == "formula" or "formula" in val:
-        f = val.get("formula")
+        f = raw_value if val.get("type") == "formula" and isinstance(raw_value, str) else val.get("formula")
         if isinstance(f, str) and f.strip():
             s = f.strip()
             return s if s.startswith("=") else f"={s}"
@@ -348,7 +348,7 @@ def enrich_cells_with_formulas(cells, table_id, token, ctx, *, api_version="2026
             norm = by_addr.get(addr)
             if not norm or norm.get("formula"):
                 continue
-            f = _formula_from_content_value(cell.get("value"))
+            f = _formula_from_content_value(cell.get("value"), cell.get("rawValue"))
             if f:
                 norm["formula"] = f
     enriched = sum(1 for c in work if c.get("formula"))
