@@ -48,9 +48,14 @@ encrypted loopback SSH forward. Paired authorization, bad-token rejection, repai
 refusal and separate backend/tunnel restarts passed over that real route. The service
 has no Workiva credentials or non-loopback egress; no workbook was accessed. Independent
 review covered the read-only deployment boundary, not overall release readiness.
-The paired extension is privately staged on the Mac, not installed in the owner's
-Chrome profile. Browser installation, a provisioned Workiva sandbox, and first real
-inspection remain open. [Deployment controls and rollback](../deploy/README.md).
+The paired extension is now installed and enabled in the owner's Mac Chrome 153
+profile through Load unpacked. Chrome reported zero manifest/runtime errors; its
+worker authenticated through the tunnel and rejected a bad token and malformed
+repair request, before and after extension reload. The native installation view was
+captured and inspected. This developer-assisted route does not close onboarding:
+clean-machine setup, a provisioned Workiva sandbox, in-page operation and first real
+inspection remain open. [Private installation](../extension/PACKAGING.md) and
+[deployment controls and rollback](../deploy/README.md).
 
 - Provide one guided setup path, readable connection status, and a safe diagnostic
   action. Distinguish service offline, credentials missing, access denied,

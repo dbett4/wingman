@@ -1,78 +1,84 @@
-# Wingman extension — packaging & install
+# Wingman — private Chrome installation
 
-This documents the **real install channels** that run the content script
-fully (unlike `--load-extension` / CDP `Extensions.loadUnpacked`, which Chrome 149 loads but
-**suppresses content-script execution** for unpacked dev extensions — a blocker hit during an
-early spike).
+The current route is a **privately paired unpacked extension**, not a store release
+or enterprise force-install. Installation in the owner's browser requires approval.
+The backend runs on davgent; the Mac runs only an encrypted SSH forward. See
+[deployment controls and rollback](../deploy/README.md).
 
-## Artifacts (generated locally; all gitignored)
-| File | Purpose | Handling |
-|---|---|---|
-| `wingman-extension.zip` | source bundle for **Chrome Web Store** upload | regenerate from `extension/` |
-| `extension.crx` | signed package for **self-host / enterprise** install | re-pack to update |
-| `extension.pem` | signing key for the self-host `.crx` | **SECRET — never commit; back up.** Losing it breaks self-host updates |
-| stable self-host ID | derived from `extension.pem` at first pack | used by the enterprise policy below |
+## Install the staged package
 
-> Note: the Web Store assigns its **own** extension ID on upload (different from the self-host ID).
-> Use the self-host ID only for the enterprise-policy path.
+These steps assume the private service, tunnel and paired folder have already been
+provisioned. Do not run a second backend on the Mac or regenerate its pairing token.
 
-## Recommended: unlisted Chrome Web Store
-Cleanest distribution channel — auto-updates, no admin, no hosting, shareable by link.
-1. One-time: a Google account + Chrome Web Store **developer registration ($5 one-time fee)** — `https://chrome.google.com/webstore/devconsole`.
-2. Upload `wingman-extension.zip`.
-3. Fill the **listing form** (this is where uploads commonly stall):
-   - Host-access justification: "Reads the active spreadsheet cell from the Workiva page DOM to assist the operator."
-   - Single purpose: "Assist operators editing Workiva spreadsheets."
-   - Data use: **collects nothing, sends nothing off-device** — no remote code. Note the manifest
-     does declare `alarms`, `storage`, and `debugger` permissions (the `debugger` permission drives
-     the local CDP screenshot crops and draws extra review scrutiny), plus host permissions for the
-     localhost service — justify each in the form.
-4. Set visibility to **Unlisted** (only people with the link can install).
-5. Submit for review (~1-3 business days for a content-script extension).
-6. Install from the unlisted link on each machine that needs it.
-7. **Verify it works** (see below) — do not assume "Added" == working.
+1. Open `chrome://extensions/` in the intended Chrome profile.
+2. Check for an existing Wingman installation before adding another. Preserve any
+   installation whose owner or source folder is unknown.
+3. Use Developer mode and **Load unpacked**. Select the folder, not a ZIP:
+   `~/Library/Application Support/Wingman/extension/`.
+4. Open Wingman's **Details**. Confirm it is enabled, has a service worker and shows
+   the expected source folder. Investigate manifest/runtime errors before continuing.
+5. Keep that folder in place: Chrome loads directly from it. It contains a private
+   pairing configuration; do not upload, share, paste or screenshot that file.
 
-## Manifest limits (gotchas that block upload)
-- `description` ≤ **132 chars** (a 144-char description was once rejected with "description field too long"; current is 118).
-- `name` ≤ 45 chars.
-- Icons 16/48/128 required for the listing.
-Re-check these before every re-pack.
+Developer mode was already enabled during the verified owner installation. Do not
+change browser policies or unrelated extension settings to bypass an installation
+failure. Store submission, hosting, registration fees and enterprise policies are
+separate decisions, not prerequisites for this private route.
 
-## Verify it works (post-install)
-1. Open a Workiva spreadsheet and click any cell.
-2. A small dark pill appears bottom-right: **"Wingman · &lt;cell&gt; ✓"**, updating as you click cells.
-   - No pill → extension not loaded, or not on a `*.wdesk.com` tab.
-   - Pill reads **"Wingman · can't read cell"** (amber border) → Workiva changed the name-box class; the cell-ID selector drifted (the drift guard in `content.js` caught it). Re-confirm the `.dt-formula-cell-indicator` selector.
+## Verify connection without opening Workiva
 
-## Alternative: macOS enterprise force-install (managed fleets / no Web Store)
-Runs the extension by policy; bypasses the dev-load hardening. Needs **admin access** + a hosted update manifest + the `.crx`.
-1. Host `extension.crx` + an `update.xml` (Omaha update manifest) at an HTTPS URL you control.
-2. Apply a Chrome managed policy (configuration profile or `/Library/Managed Preferences/com.google.Chrome.plist`).
-```json
-{
-  "ExtensionSettings": {
-    "<your-self-host-extension-id>": {
-      "installation_mode": "force_installed",
-      "update_url": "https://YOUR-HOST/wingman/update.xml"
-    }
-  }
-}
-```
-3. Relaunch Chrome → force-installed → content script runs fully.
+The commissioning profile intentionally has **no Workiva credentials or external
+network egress**. Do not open a client workbook to test installation.
 
-## Re-pack after code changes
-```
-cd wingman
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-  --pack-extension="$PWD/extension" --pack-extension-key="$PWD/extension.pem" --no-message-box
-# then re-zip for the Web Store:
-( cd extension && zip -rq ../wingman-extension.zip . -x "*.pem" -x "*.crx" )
+Run the sanitized transport checker on the Mac:
+
+```bash
+python3 "$HOME/Library/Application Support/Wingman/check_connection.py" \
+  --extension-config "$HOME/Library/Application Support/Wingman/extension/local-config.js"
 ```
 
-## Why the dev-load route failed (for the record)
-Chrome 149 loads unpacked dev extensions (via `--load-extension` or CDP `Extensions.loadUnpacked`)
-but does not execute their content scripts — a hardening against automation/malware. It does **not**
-affect Web-Store or policy-force-installed extensions. The content-script DOM read itself is
-documented-safe (isolated world, unaffected by page CSP) and was corroborated live (the
-`.dt-formula-cell-indicator` address is in the main document; DevTools read ~100% in ~2-3ms).
-The only un-ticked box is loading a dev build — which both channels above resolve.
+That verifies the service and tunnel, not Chrome. Browser verification must also
+use the installed worker: a paired `/api/connection` request should return 200 with
+`authorization: accepted`, `serviceMode: read-only`, `workivaCredentials: missing`
+and `workivaAccess: not_tested`. A wrong token and an authenticated malformed POST
+to `/apply` must return 403; the latter must report `code: read_only`. Never print
+the paired token while probing. Repeat after Wingman's **Reload** control.
+
+**Observed September 15, 2026:** Chrome 153.0.8010.36 on the owner's Mac loaded the
+staged folder through the normal file picker. The extension was enabled with zero
+manifest/runtime errors. Worker-context connection and refusal probes passed both
+before and after extension reload. No Workiva workbook was opened for these tests.
+This is developer-assisted installation proof, not clean-machine onboarding,
+in-page broker/content-script proof on Workiva, or product acceptance.
+
+The earlier Chrome 149 automated-load failure was an observation from one spike;
+its alleged universal content-script suppression was not established. Disposable
+installed-extension tests now exercise the real worker and content scripts against
+a fictional page. They do not establish compatibility with live Workiva.
+
+## Permissions and data boundaries
+
+- `storage` preserves local extension state; `alarms` drives the existing development
+  reload check. The latter is not a supported package update mechanism.
+- `debugger` supports cell navigation and screenshot capture. Chrome presents broad
+  debugger/data-access warnings. The backend's read-only mode does **not** remove
+  this browser permission or make all extension behavior read-only. Permission
+  reduction remains an open product goal.
+- Content scripts match the Workiva/wdesk hosts in `manifest.json`. Service requests
+  use loopback HTTP, then travel through SSH to the private VPS. Do not claim that
+  all data stays on the Mac. Provisioning Workiva access requires its own approval.
+- Do not distribute `local-config.js`, `.env`, signing keys, client captures or
+  runtime logs. The privately paired folder is not a publishable source bundle.
+
+## Update, recover and remove
+
+For an approved update, preserve the pairing file and previous verified package;
+stage matching reviewed code and backend versions, then use Wingman's **Reload**
+control. Repeat the connection/refusal checks. Restore the prior verified files and
+reload to reverse a failed extension update. Upgrade/rollback have not yet passed
+clean-machine product acceptance.
+
+Disabling Wingman in Chrome stops the extension without deleting its private files.
+Removing it through Chrome removes the browser installation, not the VPS service
+or SSH tunnel. Those have separate rollback steps in the deployment guide. Do not
+revive the retired Mac service during recovery.

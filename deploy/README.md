@@ -69,9 +69,11 @@ python3 "$HOME/Library/Application Support/Wingman/check_connection.py" \
 ```
 
 Restart the two new units independently and repeat the checks to verify recovery.
-Do not restart unrelated services or change host keys. Real browser installation,
-Workiva credentials, network egress and a named sandbox inspection each remain
-separate from this connection-only validation.
+Do not restart unrelated services or change host keys. The owner-approved Mac
+Chrome installation also passed worker-context connection/refusal probes before
+and after extension reload; see the [private installation guide](../extension/PACKAGING.md).
+Workiva credentials, network egress and a named sandbox inspection remain separate
+approval and verification steps. No live Workiva compatibility is established.
 
 To reverse commissioning, stop and disable `wingman-readonly.service` and boot out
 `com.wingman.vps-tunnel` on the Mac; disable that launchd label to prevent reload at
