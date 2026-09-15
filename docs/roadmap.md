@@ -28,7 +28,7 @@ authorization, backend credential presence and untested Workiva access, with
 explicit recovery states and redacted diagnostics. See [demo.md](demo.md) for
 the fictional demo's boundaries.
 
-Local verification passed 594 backend tests, 302 extension checks, four worker
+Local verification passed 600 backend tests, 304 extension checks, four worker
 contract tests, three demo browser workflows and two installed-extension connection
 cases. Thirteen NumPy-dependent vision tests were skipped. The installed test uses
 the real MV3 worker and HTTP handler, but fictional credentials and a substituted
@@ -42,11 +42,15 @@ Why: a polished panel is not a usable product if the service connection is opaqu
 
 **Open.** The local diagnostic/recovery slice is implemented and tested, including
 missing configuration, rejected service tokens, missing backend credentials, network
-loss, timeout and late replies. The supported remote connection, provisioned package
-and first real inspection remain unproven. An encrypted loopback SSH forward to the
-authoritative VPS is the proposed private-install route; deployment, credentials and
-installation into the owner's browser require action-specific approval. It is not
-running merely because the panel now explains it.
+loss, timeout and late replies. The owner approved private commissioning on September
+15: a read-only service now runs on the authoritative VPS and the Mac runs only an
+encrypted loopback SSH forward. Paired authorization, bad-token rejection, repair/export
+refusal and separate backend/tunnel restarts passed over that real route. The service
+has no Workiva credentials or non-loopback egress; no workbook was accessed. Independent
+review covered the read-only deployment boundary, not overall release readiness.
+The paired extension is privately staged on the Mac, not installed in the owner's
+Chrome profile. Browser installation, a provisioned Workiva sandbox, and first real
+inspection remain open. [Deployment controls and rollback](../deploy/README.md).
 
 - Provide one guided setup path, readable connection status, and a safe diagnostic
   action. Distinguish service offline, credentials missing, access denied,
