@@ -54,7 +54,7 @@ def _set_value(lines: list[str], key: str, value: str) -> list[str]:
     return result
 
 
-def configure(env_path: Path, extension_config_path: Path) -> str:
+def configure(env_path: Path, extension_config_path: Path, service_token_path: Path | None = None) -> str:
     lines = _read_lines(env_path)
     token = _current_value(lines, TOKEN_KEY)
     status = "preserved"
@@ -75,6 +75,10 @@ def configure(env_path: Path, extension_config_path: Path) -> str:
         encoding="utf-8",
     )
     os.chmod(extension_config_path, 0o600)
+    if service_token_path is not None:
+        service_token_path.parent.mkdir(parents=True, exist_ok=True)
+        service_token_path.write_text(token + "\n", encoding="utf-8")
+        os.chmod(service_token_path, 0o600)
     return status
 
 
@@ -84,8 +88,9 @@ def main() -> int:
     parser.add_argument(
         "--extension-config", type=Path, default=DEFAULT_EXTENSION_CONFIG
     )
+    parser.add_argument("--service-token-file", type=Path, help="Also write the paired raw token for systemd LoadCredential")
     args = parser.parse_args()
-    status = configure(args.env, args.extension_config)
+    status = configure(args.env, args.extension_config, args.service_token_file)
     print(f"Wingman local token {status}; extension config synchronized (secret not printed).")
     return 0
 

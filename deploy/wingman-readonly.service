@@ -1,0 +1,42 @@
+[Unit]
+Description=Wingman private read-only connection service
+After=network.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=wingman
+StateDirectoryMode=0700
+WorkingDirectory=/opt/wingman/current/server
+ExecStart=/usr/bin/python3 -B /opt/wingman/current/server/app.py
+LoadCredential=wingman-token:/etc/wingman/token
+Environment=WINGMAN_TOKEN_FILE=%d/wingman-token
+Environment=WINGMAN_READ_ONLY=1 WINGMAN_PORT=8770
+Environment=HOME=/var/lib/wingman WINGMAN_LOG_DIR=/var/lib/wingman/logs
+Environment=PATH=/usr/bin:/bin PYTHONUNBUFFERED=1
+UnsetEnvironment=WINGMAN_TOKEN WORKIVA_CLIENT_ID WORKIVA_CLIENT_SECRET
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# Connection-only commissioning. Workiva egress needs a separately approved scope.
+IPAddressDeny=any
+IPAddressAllow=localhost
+MemoryMax=256M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

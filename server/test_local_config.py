@@ -7,6 +7,8 @@ import json
 import os
 import re
 from pathlib import Path
+import subprocess
+import sys
 
 REPO = Path(__file__).resolve().parents[1]
 CONFIGURE_PATH = REPO / "scripts" / "configure_local.py"
@@ -58,3 +60,30 @@ def test_packaged_sources_have_no_nonempty_token_fallback():
     assert 'importScripts("local-config.js")' in background_source
     assert "local token missing" in background_source
     assert not re.search(r'const WM_TOKEN\s*=\s*["\'][^"\']+["\']', background_source)
+
+
+def test_service_credential_file_wins_and_missing_file_does_not_fall_back(tmp_path):
+    token_file = tmp_path / "token"
+    token_file.write_text("  fictional-file-token\n")
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("WORKIVA_", "WINGMAN_"))}
+    env.update(WINGMAN_TOKEN="wrong-environment-token", WINGMAN_TOKEN_FILE=str(token_file))
+    command = [sys.executable, "-c", "import app; assert app.WINGMAN_TOKEN == 'fictional-file-token'"]
+    result = subprocess.run(command, cwd=REPO / "server", env=env, capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    env["WINGMAN_TOKEN_FILE"] = str(tmp_path / "missing")
+    result = subprocess.run(command, cwd=REPO / "server", env=env, capture_output=True, text=True, timeout=10)
+    assert result.returncode != 0
+    assert "FileNotFoundError" in result.stderr
+    assert "wrong-environment-token" not in result.stderr
+
+
+def test_configure_pairs_systemd_credential_without_rotating_existing_token(tmp_path):
+    env = tmp_path / ".env"
+    extension = tmp_path / "extension" / "local-config.js"
+    credential = tmp_path / "systemd" / "token"
+    assert configure_local.configure(env, extension, credential) == "generated"
+    original = _token_from_env(env)
+    assert credential.read_text().strip() == original == _token_from_extension(extension)
+    assert credential.stat().st_mode & 0o777 == 0o600
+    assert configure_local.configure(env, extension, credential) == "preserved"
+    assert credential.read_text().strip() == original

@@ -38,12 +38,14 @@
   function facts(state, demo) {
     var code = describe(state, demo).code;
     var reached = code === "connected" || code === "credentials";
-    return [
+    var rows = [
       ["Service authorization", reached ? "Accepted" : code === "demo" ? "Simulated, not tested" : "Not established"],
       ["Workiva credentials", code === "connected" ? "Configured, not validated" : code === "credentials" ? "Missing on backend" : "Not checked"],
       ["Workbook access", "Not tested"],
       ["Workbook changes", "None — connection check only"],
     ];
+    if (reached && state.data.serviceMode === "read-only") rows.unshift(["Service mode", "Read-only — repairs disabled"]);
+    return rows;
   }
 
   function diagnostics(state, demo) {

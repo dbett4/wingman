@@ -52,7 +52,11 @@ import wingman_receipts
 import wk_client as wk
 
 PORT = int(os.environ.get("WINGMAN_PORT", "8770"))
-WINGMAN_TOKEN = os.environ.get("WINGMAN_TOKEN", "").strip()
+# A systemd credential file takes precedence; a missing configured file fails startup.
+WINGMAN_TOKEN = (
+    Path(os.environ["WINGMAN_TOKEN_FILE"]).read_text(encoding="utf-8").strip()
+    if os.environ.get("WINGMAN_TOKEN_FILE") else os.environ.get("WINGMAN_TOKEN", "").strip()
+)
 # Allowlisted extension id(s). Set WINGMAN_EXT_ID to your unpacked/store extension ID
 # (chrome://extensions with Developer mode on shows the ID of a loaded unpacked build).
 ALLOWED_EXT_IDS = {
@@ -390,12 +394,13 @@ def _wingman_status():
         "version": {"extension_build": _ext_build()},
         "operator_config": _operator_config_status(),
         "features": {
+            "read_only": wingman_config.read_only_enabled(),
             "formula_fetch": wk.formula_fetch_enabled(),
             "formula_fetch_mode": wk.formula_fetch_mode(),
             "formula_fetch_cap": wk.formula_fetch_cap(),
-            "vision": True,
-            "checks_adapter": True,
-            "external_checks_cli": checks_bridge.resolve_run_checks_script() is not None,
+            "vision": not wingman_config.read_only_enabled(),
+            "checks_adapter": not wingman_config.read_only_enabled(),
+            "external_checks_cli": not wingman_config.read_only_enabled() and checks_bridge.resolve_run_checks_script() is not None,
         },
     }
 
@@ -465,6 +470,12 @@ class Handler(BaseHTTPRequestHandler):
         if not self._loopback_readonly_ok(path) and not self._guard():
             return
         q = urllib.parse.parse_qs(u.query)
+        if wingman_config.read_only_enabled() and (
+            path == "/api/checks" or any(q.get("checks", [])) or
+            any(_truthy(value) for value in q.get("write", []))
+        ):
+            self._send(403, {"code": "read_only", "error": "Read-only service: external checks and file exports are disabled."})
+            return
         try:
             if path == "/":
                 self._send(200, {
@@ -486,6 +497,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, {
                     "service": "wingman", "protocol": 1, "readOnly": True,
                     "authorization": "accepted", "workivaAccess": "not_tested",
+                    "serviceMode": "read-only" if wingman_config.read_only_enabled() else "standard",
                     "workivaCredentials": "present" if all(os.environ.get(k) for k in
                         ("WORKIVA_CLIENT_ID", "WORKIVA_CLIENT_SECRET")) else "missing",
                 })
@@ -557,6 +569,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if not self._guard():
+            return
+        if wingman_config.read_only_enabled():
+            # Reject before body parsing, OAuth, table lookup, fixer or subprocesses.
+            # Close the connection so an unread body cannot become another request.
+            self.close_connection = True
+            self._send(403, {"code": "read_only", "error": "Read-only service: POST requests and repairs are disabled."})
             return
         u = urllib.parse.urlparse(self.path)
         path = _route_path(u.path)

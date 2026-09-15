@@ -102,12 +102,77 @@ class HandlerRouteTests(unittest.TestCase):
                 self.assertEqual(code, 200)
                 self.assertEqual(data, {"service": "wingman", "protocol": 1, "readOnly": True,
                                        "authorization": "accepted", "workivaAccess": "not_tested",
+                                       "serviceMode": "standard",
                                        "workivaCredentials": expected})
                 self.assertNotIn("fictional", json.dumps(data))
             oauth.assert_not_called()
         request = urllib.request.Request(self.base + "/api/connection", headers={"X-Wingman-Token": app.WINGMAN_TOKEN})
         with urllib.request.urlopen(request, timeout=5) as response:
             self.assertEqual(response.headers["Cache-Control"], "no-store")
+
+    def test_read_only_rejects_post_before_parsing_or_upstream_calls(self):
+        from unittest.mock import patch
+
+        with patch.dict(app.os.environ, {"WINGMAN_READ_ONLY": "1"}), \
+             patch.object(app, "_token", side_effect=AssertionError("No OAuth")) as oauth, \
+             patch.object(app, "_table_id", side_effect=AssertionError("No table lookup")) as table:
+            for path in ("/apply", "/apply/", "/fix", "/scan", "/api/queue", "/api/review-packet", "/unknown"):
+                request = urllib.request.Request(self.base + path, data=b"not-json",
+                                                 headers={"X-Wingman-Token": app.WINGMAN_TOKEN})
+                with self.assertRaises(urllib.error.HTTPError) as failure:
+                    urllib.request.urlopen(request, timeout=2)
+                self.assertEqual(failure.exception.code, 403, path)
+                self.assertEqual(json.load(failure.exception)["code"], "read_only")
+            code, denied = self._request("/apply", method="POST", token=False, body={})
+            self.assertEqual(code, 403)
+            self.assertNotIn("code", denied, "The token gate must still run first")
+            oauth.assert_not_called()
+            table.assert_not_called()
+
+    def test_read_only_blocks_get_side_effects_and_external_checks(self):
+        from unittest.mock import patch
+
+        with patch.dict(app.os.environ, {"WINGMAN_READ_ONLY": "1"}), \
+             patch.object(app, "_token", side_effect=AssertionError("No OAuth")) as oauth, \
+             patch.object(app, "_run_checks_only", side_effect=AssertionError("No subprocess")) as checks, \
+             patch.object(app, "_run_review_packet", side_effect=AssertionError("No export")) as packet:
+            for path in ("/api/checks/?spreadsheetId=fictional", "/scan?checks=tieout",
+                         "/scan-workbook?checks=hardening_gate", "/api/queue?checks=&checks=tieout",
+                         "/api/review-packet?write=true", "/api/review-packet?write=false&write=true",
+                         "/api/review-packet?checks=scorecard"):
+                code, data = self._request(path)
+                self.assertEqual((code, data.get("code")), (403, "read_only"), path)
+            oauth.assert_not_called()
+            checks.assert_not_called()
+            packet.assert_not_called()
+
+    def test_read_only_keeps_authenticated_inspection_and_metadata_reads(self):
+        from unittest.mock import patch
+
+        with patch.dict(app.os.environ, {"WINGMAN_READ_ONLY": "1"}), \
+             patch.object(app, "_token", return_value="synthetic") as oauth, \
+             patch.object(app.inspector, "inspect_cell", return_value={"observed": "fictional"}) as inspect:
+            code, data = self._request("/api/connection")
+            self.assertEqual((code, data["serviceMode"]), (200, "read-only"))
+            oauth.assert_not_called()
+            _, config = self._request("/config")
+            self.assertIs(config["read_only"], True)
+            self.assertEqual(config["safe_fix_kinds"], [])
+            _, status = self._request("/api/status")
+            self.assertIs(status["features"]["read_only"], True)
+            self.assertIs(status["features"]["checks_adapter"], False)
+            self.assertIs(status["features"]["vision"], False)
+            code, data = self._request("/api/inspect?spreadsheetId=abc&sheetId=def&addr=C12&sources=true")
+            self.assertEqual((code, data), (200, {"observed": "fictional"}))
+            inspect.assert_called_once_with("abc", "def", "C12", "synthetic", app._ctx, include_sources=True)
+
+    def test_read_only_flag_fails_closed_on_typo_without_changing_standard_mode(self):
+        from unittest.mock import patch
+
+        for value, enabled in [("1", True), ("true", True), ("treu", True), ("", False), ("0", False), ("false", False)]:
+            with patch.dict(app.os.environ, {"WINGMAN_READ_ONLY": value}):
+                self.assertEqual(app.wingman_config.read_only_enabled(), enabled)
+                self.assertEqual(bool(app.wingman_config.service_config()["safe_fix_kinds"]), not enabled)
 
     def test_status_operator_config_shape_no_secret_values(self):
         code, payload = self._request("/api/status", token=False)

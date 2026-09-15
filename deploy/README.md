@@ -1,0 +1,81 @@
+# Private connection-only deployment
+
+This profile runs Wingman on the authoritative VPS, not on the Mac. The Mac's
+launch agent runs only an SSH forward. Provisioning requires the owner's approval;
+these files do not deploy themselves. No store publication or browser policy is needed.
+
+```text
+Browser → Mac 127.0.0.1:8770 → verified SSH to davgent → VPS 127.0.0.1:8770
+```
+
+## Enforced boundaries
+
+- `WINGMAN_READ_ONLY=1` rejects every POST before parsing its body, requesting
+  OAuth, or calling a fixer. GET external checks and `write=true` exports are also
+  denied. Ordinary authenticated inspection and GET scans remain implemented.
+- `serviceMode: read-only` reports that server-wide restriction separately from
+  the connection diagnostic's `readOnly: true`. The latter alone is not a write gate.
+- The systemd profile uses a dynamic service identity, read-only code/filesystem,
+  private state, loopback-only IP traffic, and a systemd credential file. It removes
+  Workiva credentials from the process environment. This commissioning profile
+  cannot access Workiva, even if the browser requests an inspection.
+- The SSH forward binds explicitly to `127.0.0.1`, checks the known server key,
+  disables agent forwarding, and fails if the local port is occupied. Launchd
+  reconnects after tunnel exit. It does not run Python, agents, or Workiva jobs.
+
+## Provisioned paths
+
+| Host | Path / unit | Purpose |
+| --- | --- | --- |
+| VPS | `/opt/wingman/releases/<git-commit>/` | Root-owned snapshot of reviewed tracked source; no `.env` or extension token |
+| VPS | `/opt/wingman/current` | Symlink to the adopted release |
+| VPS | `/etc/wingman/token` | Paired service token, root-owned mode 0600; never print or commit |
+| VPS | `wingman-readonly.service` | Installed from the adjacent unit file |
+| VPS | `/var/lib/wingman` | Private service state |
+| Mac | `~/Library/LaunchAgents/com.wingman.vps-tunnel.plist` | SSH transport only |
+| Mac | `~/Library/Application Support/Wingman/extension/` | Private paired extension folder; browser installation is separate |
+
+Before creating these paths, check for an existing owner, service and listener.
+Do not overwrite an older installation or revive a retired Mac service. Use a
+commit-addressed `git archive`, compare extracted files with that commit, and
+change the `current` symlink only after tests and review.
+
+Generate a new pair inside a private directory with `scripts/configure_local.py`:
+use `--env`, `--extension-config` and `--service-token-file` to choose explicit new
+paths. The raw token file becomes the systemd credential; the JavaScript config
+belongs only in the private extension folder. The command preserves an existing
+pair, so it is not a token rotation tool. Transfer private files through verified
+SSH, never a public artifact URL, repository, command argument or screenshot.
+
+## Verify and recover
+
+After authorized installation, check `systemctl is-active wingman-readonly` and
+`ss -ltn '( sport = :8770 )'` on the VPS. On the Mac check
+`launchctl print gui/$(id -u)/com.wingman.vps-tunnel` and the loopback listener.
+An unauthenticated `/api/connection` must return 403. A paired request must report
+`authorization: accepted`, `serviceMode: read-only`, `workivaCredentials: missing`
+and `workivaAccess: not_tested`. An authenticated POST with an empty or malformed
+body must return `code: read_only` without touching Workiva. Use a program that
+reads the private config internally; do not put the token in curl arguments.
+
+The included checker runs those exact probes and prints only redacted outcomes:
+
+```bash
+# VPS
+sudo python3 /opt/wingman/current/deploy/check_connection.py --token-file /etc/wingman/token
+# Mac, after private staging (not browser installation)
+python3 "$HOME/Library/Application Support/Wingman/check_connection.py" \
+  --extension-config "$HOME/Library/Application Support/Wingman/extension/local-config.js"
+```
+
+Restart the two new units independently and repeat the checks to verify recovery.
+Do not restart unrelated services or change host keys. Real browser installation,
+Workiva credentials, network egress and a named sandbox inspection each remain
+separate from this connection-only validation.
+
+To reverse commissioning, stop and disable `wingman-readonly.service` and boot out
+`com.wingman.vps-tunnel` on the Mac; disable that launchd label to prevent reload at
+login. Preserve the release and private token unless deletion is explicitly wanted.
+For an update rollback, stop the service, repoint `current` to the prior verified
+release, restart, and repeat the connection/write-refusal checks. Do not regenerate
+the pair or switch to a Mac backend as part of rollback.

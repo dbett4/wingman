@@ -96,11 +96,14 @@ Opening the view sends no check. The explicit check calls the guarded
 - The fictional demo reports **Demo connection**, never live authorization.
 
 This is connection diagnosis, **not a completed guided installer**. The current
-build still addresses `http://127.0.0.1:8770`. For a VPS-hosted backend, an approved
-encrypted loopback forward is a candidate; this check does not provision or prove
-that route. Keep the production backend on its authoritative host rather than
-starting a second service on the browser's machine. Remote setup, clean-machine
-installation and authorized Workiva compatibility remain open in [G1](docs/roadmap.md#g1-a-reviewer-can-install-connect-and-recover-without-developer-help).
+build still addresses `http://127.0.0.1:8770`. The [private deployment profile](deploy/README.md)
+connects that address to a VPS backend through an encrypted SSH forward. Its
+connection-only service enforces read-only mode, uses a private systemd token,
+and has no Workiva credentials or non-loopback egress. **Read-only — repairs
+disabled** in Connection reports that server-wide mode; it is distinct from a
+read-only diagnostic on the ordinary service. Provisioning and live verification
+are separate from running the check. Clean-machine installation and authorized
+Workiva compatibility remain open in [G1](docs/roadmap.md#g1-a-reviewer-can-install-connect-and-recover-without-developer-help).
 
 ## Why I built it
 

@@ -22,6 +22,7 @@ import app
 @pytest.mark.parametrize("token", ["", "fictional-extension-pair"])
 def test_installed_connection(tmp_path, monkeypatch, token):
     monkeypatch.setattr(app, "WINGMAN_TOKEN", "fictional-extension-pair")
+    monkeypatch.setenv("WINGMAN_READ_ONLY", "1")
     monkeypatch.setenv("WORKIVA_CLIENT_ID", "fictional-id")
     monkeypatch.setenv("WORKIVA_CLIENT_SECRET", "fictional-secret")
     upstream_calls = []
@@ -118,6 +119,7 @@ def test_installed_connection(tmp_path, monkeypatch, token):
                     print("Screenshots:", tmp_path)
                     return
                 assert [r for r in requests if r[0] != "/version"] == [("/api/connection", True)]
+                expect(page.locator(".wc-facts")).to_contain_text("Read-only — repairs disabled")
                 expect(page.locator(".wc-facts")).to_contain_text("Configured, not validated")
                 expect(page.locator(".wc-facts")).to_contain_text("Workbook accessNot tested")
                 monkeypatch.setenv("WORKIVA_CLIENT_SECRET", "")
