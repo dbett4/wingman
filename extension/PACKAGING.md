@@ -27,8 +27,16 @@ separate decisions, not prerequisites for this private route.
 
 ## Verify connection without opening Workiva
 
-The commissioning profile intentionally has **no Workiva credentials or external
+The commissioning backend intentionally has **no Workiva credentials or external
 network egress**. Do not open a client workbook to test installation.
+
+The local development candidate now includes **Connection & setup**. It opens on
+first installation, through **Extension options**, or when a toolbar click cannot
+reach a Workiva panel. Click **Check connection** there; no workbook or DevTools is
+needed. The page separates service authorization, backend credential presence and
+untested workbook access, and can copy redacted diagnostics. Updates do not open
+this page automatically or interrupt a review. This candidate has been tested in
+a disposable browser, not installed over the owner's commissioned Mac package.
 
 Run the sanitized transport checker on the Mac:
 
@@ -63,7 +71,10 @@ a fictional page. They do not establish compatibility with live Workiva.
 - `debugger` supports cell navigation and screenshot capture. Chrome presents broad
   debugger/data-access warnings. The backend's read-only mode does **not** remove
   this browser permission or make all extension behavior read-only. Permission
-  reduction remains an open product goal.
+  reduction remains an open product goal. Chrome explicitly excludes `debugger`
+  from [optional permissions](https://developer.chrome.com/docs/extensions/reference/api/permissions).
+  Removing it requires replacing or separating those features, not just moving
+  the manifest entry to `optional_permissions`.
 - Content scripts match the Workiva/wdesk hosts in `manifest.json`. Service requests
   use loopback HTTP, then travel through SSH to the private VPS. Do not claim that
   all data stays on the Mac. Provisioning Workiva access requires its own approval.

@@ -135,7 +135,7 @@
     set: function (obj, cb) { Object.assign(storage, obj); if (cb) cb(); },
   } };
   function panelRoot() { return document.getElementById("__wk_wingman__").shadowRoot; }
-  function togglePanel() { listeners.forEach(function (fn) { fn({ type: "WM_TOGGLE" }); }); }
+  function togglePanel() { listeners.forEach(function (fn) { fn({ type: "WM_TOGGLE" }, {}, function () {}); }); }
   function action(id, path, after) {
     document.getElementById(id).onclick = function () {
       setBusy(1);

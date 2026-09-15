@@ -5,8 +5,8 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const source = readFileSync(require.resolve("./background.js"), "utf8");
 
-function broker(token, fetcher) {
-  let listener;
+function broker(token, fetcher, sendMessage) {
+  let listener, toolbar, installed, optionsOpened = 0;
   const signal = {}, deadlines = [];
   const context = {
     WINGMAN_LOCAL_CONFIG: { token },
@@ -15,14 +15,20 @@ function broker(token, fetcher) {
     AbortSignal: { timeout: ms => { deadlines.push(ms); return signal; } },
     fetch: async (url, opts) => url.endsWith("/version") ? { ok: false } : fetcher(url, opts),
     chrome: {
-      runtime: { onInstalled: { addListener() {} }, onMessage: { addListener: fn => { listener = fn; } } },
-      action: { onClicked: { addListener() {} } },
+      runtime: {
+        onInstalled: { addListener: fn => { installed = fn; } },
+        onMessage: { addListener: fn => { listener = fn; } },
+        openOptionsPage: async () => { optionsOpened++; },
+      },
+      tabs: { sendMessage },
+      action: { onClicked: { addListener: fn => { toolbar = fn; } } },
       alarms: { create() {}, onAlarm: { addListener() {} } },
     },
   };
   vm.runInNewContext(source, context, { filename: "background.js" });
   return {
-    signal, deadlines,
+    signal, deadlines, toolbar, installed,
+    get optionsOpened() { return optionsOpened; },
     request: (opts = {}) => new Promise(resolve => {
       assert.equal(listener({ type: "WM_API", path: "/api/connection", opts }, {}, resolve), true);
     }),
@@ -76,4 +82,29 @@ test("timeout omits raw error details and a network failure remains offline", as
     assert.equal(!!reply.offline, name === "TypeError");
     if (reply.timeout) assert.equal(reply.error, undefined);
   }
+});
+
+test("first install opens setup, updates do not interrupt the reviewer", () => {
+  const worker = broker("", () => assert.fail("No service request"));
+  worker.installed({ reason: "update" });
+  assert.equal(worker.optionsOpened, 0);
+  worker.installed({ reason: "install" });
+  assert.equal(worker.optionsOpened, 1);
+});
+
+test("toolbar only accepts an acknowledged top-frame panel; otherwise opens setup", async () => {
+  for (const response of ["reject", undefined, { ok: false }, { ok: true }]) {
+    const worker = broker("", () => assert.fail("No service request"), async (id, message, options) => {
+      assert.equal(id, 27);
+      assert.equal(message.type, "WM_TOGGLE");
+      assert.equal(options.frameId, 0);
+      if (response === "reject") throw new Error("No receiver on this page");
+      return response;
+    });
+    await worker.toolbar({ id: 27 });
+    assert.equal(worker.optionsOpened, response && response.ok ? 0 : 1);
+  }
+  const noTab = broker("", () => assert.fail("No service request"), () => assert.fail("No tab to message"));
+  await noTab.toolbar({});
+  assert.equal(noTab.optionsOpened, 1);
 });

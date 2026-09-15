@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wingman · Connection & setup</title>
+  <link rel="icon" href="icons/icon48.png">
+  <link rel="stylesheet" href="setup.css">
+  <script src="wingman-connection.js" defer></script>
+  <script src="setup.js" defer></script>
+</head>
+<body>
+  <main>
+    <header>
+      <img src="icons/icon48.png" width="40" height="40" alt="">
+      <div><h1>Set up Wingman</h1><p>Check your connection before opening a workbook.</p></div>
+    </header>
+    <div class="setup-layout">
+      <div id="connection" aria-label="Connection check"></div>
+      <aside aria-label="Getting started">
+        <h2>Your first inspection</h2>
+        <ol>
+          <li><strong>Check the connection.</strong> This checks the paired service only. It does not open or change a workbook.</li>
+          <li><strong>Confirm your approved workspace.</strong> Workiva access must be provisioned separately. A connected service is not proof of workbook access.</li>
+          <li><strong>Inspect a selected cell.</strong> In an approved Workiva spreadsheet, select a cell, open Wingman and choose Inspect. Refresh an existing tab after installing or reloading the extension.</li>
+        </ol>
+        <p class="setup-tip">No panel on the current page? You can always return here through Wingman’s Extension options in Chrome.</p>
+        <details>
+          <summary>What can Wingman access?</summary>
+          <p>Wingman reads selected-cell context on Workiva pages and sends requests through the paired service. For the private VPS setup, that traffic leaves this device through an encrypted SSH connection.</p>
+          <p>This build also requests Chrome’s broad <strong>debugger permission</strong> for cell navigation and screenshots. Chrome warns that it can read and change data on all websites. A read-only backend does not remove this browser capability.</p>
+          <p>No Workiva password or service token belongs on this page. The paired package holds its service configuration; Workiva credentials stay on the backend.</p>
+        </details>
+      </aside>
+    </div>
+    <p id="copy-status" role="status"></p>
+    <footer>Wingman <span id="version"></span> · Private review tool</footer>
+  </main>
+</body>
+</html>

@@ -187,7 +187,7 @@ available, and the adapter returns an explicit unavailable result when it is abs
 pip install pytest
 python3 -m pytest server/
 node extension/content.test.js
-node --test extension/background.test.js
+node --test extension/background.test.js extension/setup.test.js
 scripts/smoke_check.sh             # route and write-gate smoke checks
 ```
 
@@ -214,8 +214,9 @@ python3 -m pytest scripts/test_extension_browser.py -q -s
 This separate test requires a **free loopback port 8770**. It copies only declared
 extension assets into a disposable profile, supplies fictional configuration,
 and serves a fictional page without contacting Workiva. It exercises the real
-worker, HTTP handler, failure/recovery states, and actual panel dimensions; it
-does not prove live Workiva or remote-host compatibility. Browser sandboxing stays
+worker, HTTP handler, standalone setup page, panel-message acknowledgment,
+failure/recovery states, keyboard focus and narrow layouts. It does not prove
+live Workiva or remote-host compatibility. Browser sandboxing stays
 enabled. On hosts using an existing Chrome setuid sandbox, select that installed
 helper with `CHROME_DEVEL_SANDBOX`; do not disable sandboxing to run the test.
 

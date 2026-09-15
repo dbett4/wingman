@@ -1,0 +1,54 @@
+:root {
+  color-scheme: dark light;
+  --bg: #2a2a2e;
+  --fg: #e6e8f0;
+  --muted: #9aa0b4;
+  --border-soft: rgba(255, 255, 255, .12);
+  --surface2: #35353c;
+  --surface2-hover: #3f3f48;
+  --accent: #2e62e8;
+  --accent-hover: #3a6cf0;
+  --accent-text: #9fb4f5;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #fff;
+    --fg: #2a2a2e;
+    --muted: #5b6072;
+    --border-soft: rgba(0, 0, 0, .12);
+    --surface2: #f1f2f6;
+    --surface2-hover: #e7e9f0;
+    --accent-text: #2952c8;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.55 -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 1000px; margin: 0 auto; padding: 40px 24px 24px; }
+header { display: flex; gap: 16px; align-items: center; margin-bottom: 32px; }
+header img { flex: none; }
+h1 { font-size: 26px; font-weight: 500; margin: 0 0 4px; }
+header p, aside p, aside li, footer { color: var(--muted); }
+header p { margin: 0; }
+.setup-layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 36px; align-items: start; }
+#connection { border: 1px solid var(--border-soft); border-radius: 10px; min-width: 0; }
+aside { min-width: 0; overflow-wrap: anywhere; }
+aside h2 { font-size: 18px; font-weight: 500; margin: 0 0 16px; }
+aside ol { padding-left: 22px; margin: 0; }
+aside li { padding-left: 4px; margin-bottom: 18px; }
+aside strong { color: var(--fg); font-weight: 600; }
+.setup-tip { border-top: 1px solid var(--border-soft); padding-top: 16px; }
+aside details { border-top: 1px solid var(--border-soft); }
+summary { cursor: pointer; min-height: 44px; padding: 12px 0; color: var(--accent-text); }
+.wm-btn { font: inherit; color: var(--fg); background: var(--surface2); border: 1px solid var(--border-soft); border-radius: 7px; min-height: 44px; padding: 10px 14px; cursor: pointer; white-space: normal; }
+.wm-btn:hover { background: var(--surface2-hover); }
+.wm-btn.primary { color: #fff; background: var(--accent); border-color: transparent; }
+.wm-btn.primary:hover { background: var(--accent-hover); }
+.wm-btn:disabled { opacity: .6; cursor: default; }
+button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 3px; }
+#copy-status { min-height: 22px; color: var(--muted); }
+footer { font-size: 12px; border-top: 1px solid var(--border-soft); padding-top: 16px; }
+@media (max-width: 680px) {
+  main { padding: 24px 16px; }
+  .setup-layout { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  h1 { font-size: 22px; }
+}

@@ -9,10 +9,18 @@ try { importScripts("local-config.js"); } catch (_err) { /* setup.sh creates it 
 const SERVICE = "http://127.0.0.1:8770";
 const WM_TOKEN = String((globalThis.WINGMAN_LOCAL_CONFIG || {}).token || "").trim();
 
-chrome.runtime.onInstalled.addListener(() => console.log("[wingman] background installed"));
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === "install") chrome.runtime.openOptionsPage();
+});
 
-chrome.action.onClicked.addListener((tab) => {
-  if (tab && tab.id) chrome.tabs.sendMessage(tab.id, { type: "WM_TOGGLE" }).catch(() => {});
+chrome.action.onClicked.addListener(async (tab) => {
+  try {
+    if (tab && tab.id) {
+      const reply = await chrome.tabs.sendMessage(tab.id, { type: "WM_TOGGLE" }, { frameId: 0 });
+      if (reply && reply.ok) return;
+    }
+  } catch (_error) { /* Unsupported page or a tab that needs reloading. */ }
+  await chrome.runtime.openOptionsPage();
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

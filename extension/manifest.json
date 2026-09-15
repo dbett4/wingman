@@ -11,6 +11,10 @@
   "action": {
     "default_title": "Wingman for Workiva"
   },
+  "options_ui": {
+    "page": "setup.html",
+    "open_in_tab": true
+  },
   "permissions": [
     "alarms",
     "storage",

@@ -28,9 +28,10 @@ authorization, backend credential presence and untested Workiva access, with
 explicit recovery states and redacted diagnostics. See [demo.md](demo.md) for
 the fictional demo's boundaries.
 
-Local verification passed 600 backend tests, 304 extension checks, four worker
-contract tests, three demo browser workflows and two installed-extension connection
-cases. Thirteen NumPy-dependent vision tests were skipped. The installed test uses
+The commissioning baseline passed 600 backend tests; thirteen NumPy-dependent
+vision tests were skipped. The subsequent local setup-page candidate passed 304
+extension checks, nine worker/setup-controller tests, three demo browser workflows
+and two installed-extension connection cases. The installed test uses
 the real MV3 worker and HTTP handler, but fictional credentials and a substituted
 page, not a Workiva session. Dark/light and narrow connection views were inspected.
 These results do not prove live compatibility, detector accuracy, write safety under
@@ -56,6 +57,14 @@ captured and inspected. This developer-assisted route does not close onboarding:
 clean-machine setup, a provisioned Workiva sandbox, in-page operation and first real
 inspection remain open. [Private installation](../extension/PACKAGING.md) and
 [deployment controls and rollback](../deploy/README.md).
+
+The next local candidate adds a standalone Connection & setup page, available on
+first installation, through Extension options and as the toolbar's no-panel fallback.
+It uses the real worker without opening a workbook; cancellation/late replies,
+missing callbacks, redacted failures, keyboard focus and narrow layouts are tested.
+It has not replaced the commissioned Mac package. Chrome does not support optional
+`debugger` permission, so navigation/capture permission reduction remains unresolved
+rather than silently disabling those features.
 
 - Provide one guided setup path, readable connection status, and a safe diagnostic
   action. Distinguish service offline, credentials missing, access denied,

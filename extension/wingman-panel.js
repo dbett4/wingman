@@ -2023,9 +2023,12 @@
   }
 
   if (guardExtensionContext() && chrome.runtime.onMessage) {
-    chrome.runtime.onMessage.addListener(function (msg) {
+    chrome.runtime.onMessage.addListener(function (msg, _sender, sendResponse) {
       if (!guardExtensionContext()) return;
-      if (msg && msg.type === "WM_TOGGLE") { open ? closePanel() : openPanel(); }
+      if (msg && msg.type === "WM_TOGGLE") {
+        open ? closePanel() : openPanel();
+        sendResponse({ ok: true });
+      }
     });
   }
   document.addEventListener("keydown", function (e) {

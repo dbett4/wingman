@@ -59,7 +59,8 @@ def test_installed_connection(tmp_path, monkeypatch, token):
         extension = tmp_path / "extension"
         extension.mkdir()
         manifest = json.loads((ROOT / "extension/manifest.json").read_text())
-        assets = {"manifest.json", manifest["background"]["service_worker"], "vision-capture.js"}
+        assets = {"manifest.json", manifest["background"]["service_worker"], "vision-capture.js",
+                  manifest["options_ui"]["page"], "setup.js", "setup.css"}
         assets.update(manifest["icons"].values())
         for script in manifest["content_scripts"]:
             assets.update(script["js"])
@@ -93,10 +94,64 @@ def test_installed_connection(tmp_path, monkeypatch, token):
                         route.abort()
 
                 context.route("**/*", route_request)
-                page = context.pages[0]
                 errors = []
+                worker = context.service_workers[0] if context.service_workers else context.wait_for_event("serviceworker")
+                setup = context.new_page()
+                setup.on("pageerror", lambda error: errors.append(str(error)))
+                setup.goto(worker.url.rsplit("/", 1)[0] + "/" + manifest["options_ui"]["page"])
+                setup_title = setup.locator(".wc-status h3")
+                expect(setup_title).to_have_text("Not checked")
+                assert not [r for r in requests if r[0] != "/version"]
+                setup.emulate_media(color_scheme="dark")
+                setup.screenshot(path=str(tmp_path / "setup-unchecked.png"))
+                setup.locator(".wc-check").focus()
+                setup.keyboard.press("Enter")
+                expect(setup_title).to_have_text("Service connected" if token else "Extension setup needed")
+                expect(setup.locator(".wc-check")).to_be_focused()
+                setup.screenshot(path=str(tmp_path / "setup-result.png"))
+                if token:
+                    assert [r for r in requests if r[0] != "/version"] == [("/api/connection", True)]
+                    expect(setup.locator(".wc-facts")).to_contain_text("Read-only — repairs disabled")
+                    monkeypatch.setenv("WORKIVA_CLIENT_SECRET", "")
+                    setup.locator(".wc-check").click()
+                    expect(setup_title).to_have_text("Workiva setup incomplete")
+                    setup.screenshot(path=str(tmp_path / "setup-credentials.png"))
+                    setup.emulate_media(color_scheme="light")
+                    setup.screenshot(path=str(tmp_path / "setup-light.png"))
+                    monkeypatch.setattr(app, "WINGMAN_TOKEN", "different-fictional-pair")
+                    setup.locator(".wc-check").click()
+                    expect(setup_title).to_have_text("Service access rejected")
+                    setup.screenshot(path=str(tmp_path / "setup-denied.png"))
+                    monkeypatch.setattr(app, "WINGMAN_TOKEN", "fictional-extension-pair")
+                    monkeypatch.setenv("WORKIVA_CLIENT_SECRET", "fictional-secret")
+                    setup.locator(".wc-check").click()
+                    expect(setup_title).to_have_text("Service connected")
+                    setup.locator(".wc-copy").click()
+                    expect(setup.locator("#copy-status")).to_have_text("Redacted diagnostics copied.")
+                assert "fictional-extension-pair" not in setup.content()
+                assert "fictional-secret" not in setup.content()
+                setup.set_viewport_size({"width": 390, "height": 844})
+                setup.locator(".wc-route summary").click()
+                setup.locator("aside summary").click()
+                setup.screenshot(path=str(tmp_path / "setup-narrow.png"), full_page=True)
+                assert setup.evaluate("document.documentElement.scrollWidth <= innerWidth")
+                assert setup.locator("button,summary").evaluate_all(
+                    "els=>els.every(e=>e.getBoundingClientRect().height>=40)")
+                assert not upstream_calls
+                requests.clear()
+
+                page = context.new_page()
                 page.on("pageerror", lambda error: errors.append(str(error)))
                 page.goto(page_url)
+                expect(page.locator(".wm-pill")).to_be_visible()
+                page.bring_to_front()
+                for opened in (True, False):
+                    reply = setup.evaluate("""async () => {
+                        const [tab] = await chrome.tabs.query({active:true,currentWindow:true});
+                        return chrome.tabs.sendMessage(tab.id, {type:'WM_TOGGLE'}, {frameId:0});
+                    }""")
+                    assert reply == {"ok": True}
+                    expect(page.locator(".wm-panel" if opened else ".wm-pill")).to_be_visible()
                 page.locator(".wm-pill").click()
                 page.locator(".wc-toggle").click()
                 title = page.locator(".wc-status h3")
@@ -162,6 +217,10 @@ def test_installed_connection(tmp_path, monkeypatch, token):
                 page.locator(".wc-check").click()
                 expect(title).to_have_text("Service unreachable")
                 capture("connection-offline")
+                setup.bring_to_front()
+                setup.locator(".wc-check").click()
+                expect(setup_title).to_have_text("Service unreachable")
+                setup.screenshot(path=str(tmp_path / "setup-offline.png"), full_page=True)
                 assert all(path in ("/version", "/api/connection") and paired for path, paired in requests)
                 assert not upstream_calls
                 assert not errors
