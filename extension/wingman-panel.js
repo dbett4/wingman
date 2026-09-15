@@ -26,6 +26,10 @@
     if (extensionInvalidated) return;
     extensionInvalidated = true;
     hasChrome = false;
+    clearInterval(inspectTimer);
+    inspectRequest++;
+    inspectState = { error: "Extension reloaded. Refresh this Workiva tab and reopen Wingman." };
+    if (open && activeTab === "inspect" && panelUi) paintInspection();
     if (domObserver) { domObserver.disconnect(); domObserver = null; }
     if (toastT) { clearTimeout(toastT); toastT = null; }
     pillState = "drift";
@@ -80,7 +84,7 @@
           }
           if (!resp) return reject(new Error("extension messaging failed"));
           if (resp.offline) return reject(Object.assign(new Error("service not reachable"), { offline: true }));
-          if (!resp.ok) return reject(new Error((resp.data && resp.data.error) || ("HTTP " + resp.status)));
+          if (!resp.ok) return reject(new Error((resp.data && resp.data.error) || resp.error || ("HTTP " + resp.status)));
           resolve(resp.data);
         });
       } catch (e) {
@@ -786,7 +790,8 @@
   var pos = null;  // {left,top} once dragged; null => default bottom-right anchor
   var theme = "dark";  // 'light' | 'dark'
   var panelUi = null;
-  var activeTab = "scan";
+  var activeTab = "inspect";
+  var inspectContext = null, inspectState = {}, inspectRequest = 0, inspectTimer = null;
   var tabCache = { scan: null, checks: null, workbook: null };
   var wideMode = false;
   var customPanelSize = null;  // { width, height } when user resized; null => preset narrow/wide
@@ -1100,24 +1105,91 @@
   function openPanel() {
     open = true;
     var ui = panelShell();
-    ensureServiceConfig().finally(function () { fetchOperatorStatus(ui); scan(); });
+    clearInterval(inspectTimer);
+    inspectTimer = setInterval(tick, 500); // SPA URL-only changes do not fire DOM or popstate events.
+    if (activeTab !== "inspect") ensureServiceConfig().finally(function () { fetchOperatorStatus(ui); });
   }
-  function closePanel() { open = false; closeCommandPalette(); panelUi = null; renderPill(); }
+  function closePanel() {
+    open = false;
+    clearInterval(inspectTimer);
+    inspectRequest++;
+    inspectState = {};
+    closeCommandPalette(); panelUi = null; renderPill();
+  }
+
+  function currentInspection() {
+    var indicator = document.querySelector(SEL);
+    return WingmanInspector.selection(location.href, indicator && indicator.textContent, !!demoEmbed);
+  }
+  function syncInspection() {
+    var context = currentInspection();
+    if (inspectContext && WingmanInspector.key(context) === WingmanInspector.key(inspectContext)) return;
+    var before = inspectContext && inspectContext.target, after = context.target;
+    var sheetChanged = !before || !after || before.workspaceId !== after.workspaceId ||
+      before.spreadsheetId !== after.spreadsheetId || before.sheetId !== after.sheetId;
+    inspectRequest++;
+    inspectContext = context;
+    inspectState = {};
+    if (sheetChanged) {
+      tabCache = { scan: null, checks: null, workbook: null };
+      if (open && activeTab !== "inspect" && panelUi) restoreTabView();
+    }
+    if (open && activeTab === "inspect" && panelUi) paintInspection();
+  }
+  function paintInspection() {
+    WingmanInspector.render(panelUi.body, inspectContext || currentInspection(), inspectState, inspectSelectedCell);
+  }
+  function inspectSelectedCell() {
+    if (!guardExtensionContext()) return;
+    syncInspection();
+    var target = inspectContext.target;
+    if (!target) return;
+    var request = ++inspectRequest;
+    inspectState = { loading: true };
+    paintInspection();
+    var query = ["spreadsheetId", "sheetId", "addr"].map(function (k) {
+      return k + "=" + encodeURIComponent(target[k]);
+    }).join("&");
+    function stillCurrent() {
+      syncInspection();
+      return !extensionInvalidated && open && activeTab === "inspect" && request === inspectRequest;
+    }
+    svc("/api/inspect?" + query, { cache: "no-store" }).then(function (data) {
+      if (!stillCurrent()) return;
+      if (!WingmanInspector.matches(target, data.target) || data.readOnly !== true) {
+        throw new Error("The response did not match the selected cell. No evidence displayed.");
+      }
+      inspectState = { data: data };
+      paintInspection();
+    }).catch(function (error) {
+      if (!stillCurrent()) return;
+      inspectState = { error: error.offline ? "Wingman service is unavailable. No cell was inspected." : error.message };
+      paintInspection();
+    });
+  }
 
   function setActiveTab(tabId) {
-    if (TAB_IDS.indexOf(tabId) < 0) tabId = "scan";
+    if (TAB_IDS.indexOf(tabId) < 0) tabId = "inspect";
+    if (activeTab !== tabId && inspectState.loading) {
+      inspectRequest++;
+      inspectState = {};
+    }
     activeTab = tabId;
     syncTabUi();
     if (guardExtensionContext() && chrome.storage) storageSet({ wmTab: activeTab });
     restoreTabView();
+    if (activeTab !== "inspect") ensureServiceConfig();
   }
 
   function syncTabUi() {
     if (!panelUi || !panelUi.tabsBar) return;
+    panelUi.panel.classList.toggle("wi-mode", activeTab === "inspect");
+    panelUi.body.setAttribute("aria-labelledby", "wm-tab-" + activeTab);
     panelUi.tabsBar.querySelectorAll(".wm-tab").forEach(function (btn) {
       var tid = btn.getAttribute("data-tab");
       btn.classList.toggle("active", tid === activeTab);
       btn.setAttribute("aria-selected", tid === activeTab ? "true" : "false");
+      btn.tabIndex = tid === activeTab ? 0 : -1;
     });
     renderTabActions();
   }
@@ -1170,6 +1242,11 @@
 
   function restoreTabView() {
     if (!panelUi) return;
+    syncInspection();
+    if (activeTab === "inspect") {
+      paintInspection();
+      return;
+    }
     var cached = tabCache[activeTab];
     if (!cached) {
       updateCtxLine(panelUi, "—", null);
@@ -1231,6 +1308,8 @@
       return panelUi;
     }
     var panel = el("div", "wm-panel");
+    var inspectorStyle = el("style", null, WingmanInspector.styles);
+    panel.appendChild(inspectorStyle);
     var head = el("div", "wm-head");
     var logo = el("img", "wm-logo"); logo.src = LOGO; logo.style.width = "22px"; logo.style.height = "22px";
     head.appendChild(logo);
@@ -1267,8 +1346,22 @@
       tab.type = "button";
       tab.setAttribute("role", "tab");
       tab.setAttribute("data-tab", tid);
+      tab.id = "wm-tab-" + tid;
+      tab.setAttribute("aria-controls", "wm-body");
       tab.setAttribute("aria-selected", tid === activeTab ? "true" : "false");
       tab.onclick = function () { setActiveTab(tid); };
+      tab.onkeydown = function (event) {
+        var enabled = Array.from(tabsBar.querySelectorAll(".wm-tab:not(:disabled)"));
+        var index = enabled.indexOf(tab);
+        if (event.key === "ArrowRight") index = (index + 1) % enabled.length;
+        else if (event.key === "ArrowLeft") index = (index + enabled.length - 1) % enabled.length;
+        else if (event.key === "Home") index = 0;
+        else if (event.key === "End") index = enabled.length - 1;
+        else return;
+        event.preventDefault();
+        setActiveTab(enabled[index].getAttribute("data-tab"));
+        enabled[index].focus();
+      };
       tabsBar.appendChild(tab);
     });
     panel.appendChild(tabsBar);
@@ -1283,6 +1376,7 @@
     var thermo = el("div", "wm-thermo");
     panel.appendChild(thermo);
     var body = el("div", "wm-body"); body.id = "wm-body";
+    body.setAttribute("role", "tabpanel");
     panel.appendChild(body);
     var resizeGrip = el("div", "wm-resize-grip");
     resizeGrip.title = "Drag to resize panel";
@@ -1322,7 +1416,14 @@
 
   function sevRank(s) { return s === "high" ? 2 : s === "medium" ? 1 : 0; }
 
-  function handleScanErr(ui, e) {
+  function reviewIsCurrent(ui, ids, tab) {
+    var current = parseIds();
+    return ui === panelUi && activeTab === tab && current &&
+      current.spreadsheetId === ids.spreadsheetId && current.sheetId === ids.sheetId;
+  }
+
+  function handleScanErr(ui, e, ids, tab) {
+    if (!reviewIsCurrent(ui, ids, tab)) return;
     var msg = String(e.message || "");
     if (e.offline) stateMsg(ui.body, "Service not running", "Start it: ./run-service.sh");
     else if (/extension reloaded|context invalidated/i.test(msg)) {
@@ -1338,9 +1439,10 @@
   }
 
   function finishScan(ui, ids, data) {
+    var cacheKey = data.checks && data.checks.requested ? "checks" : "scan";
+    if (!reviewIsCurrent(ui, ids, cacheKey)) return;
     updateCtxLine(ui, scanCtxLine(data), data);
     updateThermoAlert(ui, ids, data);
-    var cacheKey = data.checks && data.checks.requested ? "checks" : "scan";
     tabCache[cacheKey] = { mode: "sheet", data: data, ids: ids };
     if (!data.items.length) {
       ui.body.replaceChildren();
@@ -1402,7 +1504,7 @@
     if (checksSuite) q += "&checks=" + encodeURIComponent(checksSuite);
     svc(q)
       .then(function (data) { finishScan(ui, ids, data); })
-      .catch(function (e) { handleScanErr(ui, e); });
+      .catch(function (e) { handleScanErr(ui, e, ids, checksSuite ? "checks" : "scan"); });
   }
 
   function runTieoutChecks() {
@@ -1432,6 +1534,7 @@
     svc("/api/queue?spreadsheetId=" + encodeURIComponent(ids.spreadsheetId) +
       "&sheetId=" + encodeURIComponent(ids.sheetId))
       .then(function (apiData) {
+        if (!reviewIsCurrent(ui, ids, "scan")) return;
         var addrs = collectVisionAddrsFromScan(apiData, VISION_CROP_MAX);
         if (!addrs.length) {
           apiData.vision = apiData.vision || {
@@ -1442,6 +1545,7 @@
         }
         stateMsg(ui.body, "Capturing cells…", addrs.length + " crops (jump + screenshot).");
         captureCellCrops(addrs).then(function (cap) {
+          if (!reviewIsCurrent(ui, ids, "scan")) return;
           if (!cap.ok || !cap.captured) {
             apiData.vision = {
               requested: true,
@@ -1466,7 +1570,7 @@
             });
         });
       })
-      .catch(function (e) { handleScanErr(ui, e); });
+      .catch(function (e) { handleScanErr(ui, e, ids, "scan"); });
   }
 
   function hasHigh(s) { return (s.groups || []).some(function (g) { return g.severity === "high"; }); }
@@ -1617,6 +1721,7 @@
   }
 
   function renderWorkbookView(ui, ids, rollup) {
+    if (!reviewIsCurrent(ui, ids, "workbook")) return;
     var withIssues = rollup.sheets.filter(function (s) { return s.findingCount || s.error; }).length;
     var clean = Math.max(0, (rollup.scanned || 0) - withIssues);
     updateCtxLine(ui,
@@ -1647,12 +1752,14 @@
     stateMsg(ui.body, "Scanning workbook…", "every sheet — this can take a few seconds.");
     svc("/api/queue?spreadsheetId=" + encodeURIComponent(ids.spreadsheetId))
       .then(function (data) {
+        if (!reviewIsCurrent(ui, ids, "workbook")) return;
         var rollup = queueToWorkbookRollup(data);
         rollup.generated_at = new Date().toISOString();
         tabCache.workbook = { mode: "workbook", rollup: rollup, ids: ids };
         renderWorkbookView(ui, ids, rollup);
       })
       .catch(function (e) {
+        if (!reviewIsCurrent(ui, ids, "workbook")) return;
         if (e.offline) stateMsg(ui.body, "Service not running", "Start it: ./run-service.sh");
         else { stateMsg(ui.body, "Workbook scan failed", e.message); }
       });
@@ -1829,6 +1936,7 @@
   // keep the pill value fresh (only when collapsed; the panel owns the view when open)
   function tick() {
     if (!guardExtensionContext()) return;
+    if (open) syncInspection();
     if (!parseIds()) { guard.everOk = false; guard.fails = 0; pillState = "idle"; pillValue = "ready"; if (!open) renderPill(); return; }
     var elx = document.querySelector(SEL);
     var r = classifyAddress(elx ? elx.textContent : null);

@@ -34,6 +34,38 @@ function eq(label, got, want) {
   ok ? pass++ : fail++;
 }
 
+// --- read-only inspector identity and lossless evidence ---
+(function () {
+  const wi = require("./wingman-inspector.js");
+  const href = "https://app.wdesk.com/a/workspace-a/spreadsheet/book-b/sheet/sheet-c";
+  const target = { workspaceId: "workspace-a", spreadsheetId: "book-b", sheetId: "sheet-c", addr: "C12" };
+  eq("inspector exact context", wi.selection(href, " C12 "), { target });
+  for (const changed of [href.replace("workspace-a", "workspace-b"), href.replace("book-b", "book-c"), href.replace("sheet-c", "sheet-d")]) {
+    eq("inspector identity changes at " + changed, wi.key(wi.selection(changed, "C12")) !== wi.key({ target }), true);
+  }
+  for (const invalid of ["https://evil.invalid" + new URL(href).pathname, href.replace("wdesk.com", "wdesk.com.evil.invalid"),
+    href.replace("https:", "http:"), "https://app.wdesk.com/doc/doc-id#" + new URL(href).pathname]) {
+    eq("inspector refuses URL " + invalid, !!wi.selection(invalid, "C12").target, false);
+  }
+  for (const invalid of [null, "C0", "C12:D13", "C12 C13", "c12", "C01", "AAAA1"]) {
+    eq("inspector refuses address " + invalid, !!wi.selection(href, invalid).target, false);
+  }
+  eq("hash only allowed in explicit demo", wi.selection("http://localhost/#/spreadsheet/book-b/sheet/sheet-c", "C12", true).target,
+    { workspaceId: null, spreadsheetId: "book-b", sheetId: "sheet-c", addr: "C12" });
+  eq("matching response", wi.matches(target, { spreadsheetId: "book-b", sheetId: "sheet-c", addr: "C12" }), true);
+  for (const reply of [null, { ...target, sheetId: "sheet-d" }, { ...target, spreadsheetId: "book-c" }, { ...target, addr: "D12" }]) {
+    eq("reject foreign response " + JSON.stringify(reply), wi.matches(target, reply), false);
+  }
+  for (const [value, text] of [[0, "0"], [false, "false"], [null, "(blank)"], ["", "(blank)"], ["<script>", "<script>"]]) {
+    eq("preserve observed " + JSON.stringify(value), wi.valueText({ status: "observed", value }), text);
+  }
+  eq("unavailable is not blank", wi.valueText({ status: "unavailable" }), "Not available");
+  eq("formula object uses expression", wi.valueText({ status: "observed", value: { type: "formula" }, formula: "=6*7" }), "=6*7");
+  eq("native precision and scale", wi.formatText({ status: "observed", value: {
+    valueFormatType: "ACCOUNTING", precision: { auto: false, value: 0 }, enteredIn: "ONES", shownIn: "THOUSANDS",
+  } }), "ACCOUNTING · 0 decimals · entered in ONES · shown in THOUSANDS");
+})();
+
 // --- classifyAddress ---
 eq("single A1",      classifyAddress("A1"),     { status: "ok", addr: "A1", isRange: false });
 eq("single C42",     classifyAddress("C42"),    { status: "ok", addr: "C42", isRange: false });

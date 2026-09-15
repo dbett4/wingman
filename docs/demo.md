@@ -6,22 +6,27 @@ In an Amp orb, use `amp orb services ensure` and its Wingman demo portal.
 
 ## Show the review, not just the findings count
 
-1. **Scan.** The panel opens and scans Statement of activities. The six findings
+1. **Inspect.** The panel opens without a scan. Select B7 and choose **Inspect
+   selected cell**: stored formula `=SUM(B3:B6)+12500`, seeded result `3746500`,
+   and native ACCOUNTING format appear separately. Try C8 (zero) and B1 (blank).
+   The inspector makes no edits and does not claim to trace sources or apply a
+   client policy. Changing the cell, sheet, or workbook clears its evidence.
+2. **Scan.** Open Scan and click **Scan** for Statement of activities. The six findings
    include three safe fixes, two formula/reference review items, and a zero-display
    convention review item. The latter is a heuristic, not a proven accounting error.
-2. **Inspect B2.** The grid shows `2,025`; the formula bar shows stored value `2025`.
+3. **Review B2.** The grid shows `2,025`; the formula bar shows stored value `2025`.
    The year detector proposes PERIOD formatting. C2 is already PERIOD and is not
    flagged. Amounts below it must not cause competing accounting-format fixes.
-3. **Preview A4.** Open Label hygiene and choose **Check fixes**. The preview removes
+4. **Preview A4.** Open Label hygiene and choose **Check fixes**. The preview removes
    trailing/double whitespace. The simulator's write trace stays empty.
-4. **Apply.** Choose **Apply**. The actual fixer performs its pre-read, write, and
+5. **Apply.** Choose **Apply**. The actual fixer performs its pre-read, write, and
    readback. A4 changes to `Intergovernmental revenue`; the trace records one write.
-5. **Demonstrate failure.** Reset the workbook, choose **Make next write mismatch**,
-   preview A4 again, and Apply. The simulator stores the wrong text once. The real
+6. **Demonstrate failure.** Reset the workbook, choose **Make next write mismatch**,
+   open Scan and scan again, preview A4, and Apply. The simulator stores the wrong text once. The real
    fixer detects it and restores the original. The trace shows both writes. The
    integration test independently compares the entire restored workbook with its
    before-state; the live fixer's restore path itself does not yet do that check.
-6. **Keep judgment visible.** B7 contains `=SUM(B3:B6)+12500`, while B8 is a broken
+7. **Keep judgment visible.** B7 contains `=SUM(B3:B6)+12500`, while B8 is a broken
    reference. Neither is offered as a safe automatic fix. Review notes is a clean
    second sheet. Download a fresh review packet or scan all sheets in Workbook.
 
@@ -32,9 +37,10 @@ to update them. Packet download always runs a fresh workbook scan.
 
 | Layer | Execution |
 | --- | --- |
-| Review UI | Existing `wingman-core.js` and `wingman-panel.js`; demo-only sizing and disabled live-only controls |
+| Review UI | `wingman-core.js`, `wingman-inspector.js`, and `wingman-panel.js`; demo-only sizing and disabled live-only controls |
 | Browser transport | `demo/demo.js` substitutes same-origin fetch for Chrome background messaging and selection for debugger-driven navigation |
-| Service | Existing `app.Handler` scan, preview, apply, and packet routes; demo wrapper restricts accessible routes |
+| Service | `app.Handler` inspect, scan, preview, apply, and packet routes; demo wrapper restricts accessible routes |
+| Inspect path | Metadata lookup and two pairs of single-cell sheetdata/content HTTP reads; no detectors or writes |
 | Read/scan path | Real HTTP client, two-page sheetdata reads, formula/type enrichment, detectors, grouping, diagnosis |
 | Fix path | Real fixer and account/workbook gates, using a synthetic identity and a fictional-only allowlist |
 | Upstream | In-memory HTTP simulator supporting only the fixture's endpoints; seeded formula results, immediate writes |
@@ -71,14 +77,17 @@ detector output visible rather than filtering it to make a cleaner presentation.
 
 ```bash
 python3 -m pytest server/test_demo.py -q
+python3 -m pytest server/test_inspector.py -q
 python3 -m pytest scripts/test_demo_browser.py -q
 ```
 
-The second command requires `agent-browser` 0.37.1 and Chromium (preinstalled in
-Amp orbs). Both commands manage disposable demo processes. HTTP tests check exact
+The browser command requires `agent-browser` 0.37.1 and Chromium (preinstalled in
+Amp orbs). These commands manage disposable demo processes. HTTP tests check exact
 cell states and untouched neighbors for all three safe fixes, pagination, session
 isolation, readback/recovery, packet redaction, and disabled routes. The browser
-test exercises the real panel and checks the narrow layout. CI runs both.
+tests exercise the real panel, check the narrow layout, and inject delayed service
+replies to test context invalidation and keyboard focus. Those injected replies
+test the controller only, not live Workiva consistency. CI runs all three.
 
 For a résumé walkthrough, say “reproducible simulated integration,” not “production
 accuracy” or “guaranteed undo.” Publish time-saved or accuracy figures only after

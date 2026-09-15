@@ -34,14 +34,34 @@ and open its **Wingman demo** portal instead.
 
 The fictional City of Riverton workbook runs through the **actual extension panel,
 service routes, detectors, and fixer** against a session-isolated simulated Workiva
-API. Preview and apply a label, year-format, or contrast fix; inject a mismatched
-write to exercise readback/restore; download a fresh review packet. No account or
+API. Inspect a selected cell, or open Scan to preview and apply a label, year-format,
+or contrast fix; inject a mismatched write to exercise readback/restore; download a
+fresh review packet. No account or
 extension installation is needed. No sample data comes from a client.
 
 This is a workflow demonstration, **not live Workiva integration evidence or a
 detector-accuracy benchmark**. Formula results are seeded, and external checks,
 vision, publishing, OAuth, async jobs, and collaborative edits are not simulated.
 See the [two-minute walkthrough and simulation boundary](docs/demo.md).
+
+## Selected-cell inspector — first revamp slice
+
+On first use, Wingman opens on **Inspect**, without reading the workbook or starting a scan.
+Select one spreadsheet cell and choose **Inspect selected cell** to see stored
+content/formula, calculated result, and native value format separately. Zero,
+blank, unavailable content, and unrecognized content types remain distinct.
+A stored number is not automatically a defect: an approved frozen value may be intentional.
+
+Inspection is read-only and does not log cell content. It clears evidence when
+selection or page context changes and rejects late replies for earlier selections.
+The service repeats both cell reads and discards changed evidence; this is **not
+an atomic or revision-pinned snapshot**. Inspect again after edits.
+
+Source tracing, engagement policy, document comments, and downstream report checks
+are not connected. Page IDs do not prove client, fiscal year, or working-copy
+authority. Existing Scan, Checks, and Workbook workflows remain separate and
+manual. Live Workiva compatibility and the browser-to-service connection still
+require validation; this slice does not change the localhost service architecture.
 
 ## Why I built it
 
@@ -53,10 +73,11 @@ and attempt to restore the original value if the result differs.
 
 ## Proof signal
 
-Current clean-run result: 488 Python tests pass, 6 integration-dependent tests
-skip (494 collected), and 243 extension tests pass. A separate Chromium workflow
-test passes against the disposable demo. CI runs the Python/extension commands on
-Python 3.11 and 3.12 and the browser workflow on Python 3.12.
+The tests cover cell evidence, target validation, detectors, and readback/recovery.
+Browser regressions exercise the inspector's delayed replies, navigation, keyboard
+access, and the existing preview/apply workflow against disposable fictional data.
+CI runs Python/extension tests on Python 3.11 and 3.12 and browser tests on Python 3.12.
+Optional vision and external-integration tests report skips when unavailable.
 
 ## Architecture
 
@@ -122,8 +143,8 @@ available, and the adapter returns an explicit unavailable result when it is abs
 
 ```bash
 pip install pytest
-python3 -m pytest server/          # 488 pass, 6 skip (494 collected)
-node extension/content.test.js     # 243 tests
+python3 -m pytest server/
+node extension/content.test.js
 scripts/smoke_check.sh             # route and write-gate smoke checks
 ```
 

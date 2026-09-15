@@ -116,6 +116,18 @@ class HandlerRouteTests(unittest.TestCase):
         self.assertEqual(code, 403)
         self.assertIn("not authorized", payload.get("error", ""))
 
+    def test_inspect_requires_token_and_validates_before_oauth(self):
+        from unittest.mock import patch
+
+        with patch.object(app, "_token", side_effect=AssertionError("OAuth must not run")) as token:
+            code, _ = self._request("/api/inspect?spreadsheetId=x&sheetId=y&addr=B7", token=False)
+            self.assertEqual(code, 403)
+            for query in ("spreadsheetId=x&sheetId=y&addr=B7:C8", "spreadsheetId=x&sheetId=y&addr=B0",
+                          "spreadsheetId=../x&sheetId=y&addr=B7", "spreadsheetId=x&addr=B7"):
+                code, _ = self._request("/api/inspect?" + query)
+                self.assertEqual(code, 400, query)
+            token.assert_not_called()
+
     def test_guarded_route_rejects_when_service_token_missing(self):
         original = app.WINGMAN_TOKEN
         app.WINGMAN_TOKEN = ""

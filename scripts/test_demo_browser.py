@@ -44,9 +44,16 @@ def test_browser_workflow(demo_url):
     def apply_label():
         run("eval", f"[...{group}.querySelectorAll('button')].find(b=>b.textContent==='Apply').click()")
 
+    def scan():
+        run("eval", f"{root}.querySelector('[data-tab=scan]').click()")
+        run("eval", f"{root}.querySelector('.wm-tab-actions .wm-btn.primary').click()")
+
     try:
         run("open", demo_url)
         run("set", "viewport", "1280", "900", "2")
+        run("wait", "--fn", ready + f" && {root}.querySelector('.wi-address')?.textContent === 'B2'")
+        check("document.getElementById('request-count').textContent === '0 simulated API requests'")
+        scan()
         run("wait", "--fn", ready + f" && {root}.querySelectorAll('.wm-grp').length === 6")
         check(f"{root}.querySelector('.wm-fixall').textContent === 'Fix all 3 safe'")
         check(f"{root}.querySelector('[data-tab=checks]').disabled")
@@ -62,6 +69,8 @@ def test_browser_workflow(demo_url):
         check("document.querySelectorAll('.trace-row').length === 1")
 
         run("click", "#reset")
+        run("wait", "--fn", ready + f" && !!{root}.querySelector('.wi-inspector')")
+        scan()
         run("wait", "--fn", ready + f" && {root}.querySelectorAll('.wm-grp').length === 6")
         run("click", "#failure")
         run("wait", "--fn", ready + " && document.getElementById('failure').getAttribute('aria-pressed') === 'true'")
@@ -72,6 +81,8 @@ def test_browser_workflow(demo_url):
         check("document.querySelectorAll('.trace-row').length === 2")
 
         run("find", "role", "button", "click", "--name", "Review notes", "--exact")
+        run("wait", "--fn", f"{root}.querySelector('.wm-body').textContent.includes('Scan the open sheet')")
+        scan()
         run("wait", "--fn", ready + f" && {root}.querySelector('.wm-body').textContent.includes('No issues found')")
         check("document.querySelector('#grid [data-addr=\"B2\"] button').textContent === '2025'")
         run("click", "#report")
@@ -85,7 +96,7 @@ def test_browser_workflow(demo_url):
         # Portal embedding opts in explicitly. Normal extension frames still exit.
         run("eval", "(() => {var f=document.createElement('iframe'); f.id='demo-frame'; f.src='/'; document.body.appendChild(f);})()")
         frame = "document.getElementById('demo-frame').contentDocument"
-        run("wait", "--fn", f"{frame}?.getElementById('__wk_wingman__')?.shadowRoot.querySelectorAll('.wm-grp').length === 6")
+        run("wait", "--fn", f"!!{frame}?.getElementById('__wk_wingman__')?.shadowRoot.querySelector('.wi-inspector')")
         check(f"{frame}.documentElement.getAttribute('data-copilot-loaded') === 'iframe'")
         run("eval", "document.getElementById('demo-frame').remove()")
         run("eval", "(() => {var f=document.createElement('iframe'); f.id='plain-frame'; f.srcdoc='<script src=\"/wingman-core.js\"></script><script src=\"/wingman-panel.js\"></script>'; document.body.appendChild(f);})()")
@@ -93,6 +104,136 @@ def test_browser_workflow(demo_url):
         run("wait", "--fn", f"{frame}?.documentElement.getAttribute('data-copilot-loaded') === 'iframe'")
         check(f"!{frame}.getElementById('__wk_wingman__')")
         run("eval", "document.getElementById('plain-frame').remove()")
+        assert not run("errors").strip(), "Browser reported uncaught JavaScript errors"
+    finally:
+        run("close")
+
+
+def test_inspector_evidence_and_navigation(demo_url):
+    executable = shutil.which("agent-browser")
+    assert executable, "Install agent-browser and run `agent-browser install` first"
+    session = "wm-inspect-" + uuid.uuid4().hex[:8]
+
+    def run(*args):
+        result = subprocess.run([executable, "--session", session, *args],
+                                capture_output=True, text=True, timeout=45)
+        assert result.returncode == 0, result.stdout + result.stderr
+        return result.stdout
+
+    root = "document.getElementById('__wk_wingman__').shadowRoot"
+    ready = "!document.getElementById('reset').disabled"
+
+    def check(expression):
+        run("eval", "(() => { if (!(" + expression + ")) throw new Error(" + repr(expression) + "); return true; })()")
+
+    def click(selector):
+        run("eval", f"{root}.querySelector({selector!r}).click()")
+
+    try:
+        run("open", demo_url)
+        run("set", "viewport", "1280", "900", "2")
+        run("wait", "--fn", f"!!{root}.querySelector('.wi-inspect') && {ready}")
+        check("document.getElementById('request-count').textContent === '0 simulated API requests'")
+        for addr, text in [("B7", "=SUM(B3:B6)+12500"), ("C8", "0"), ("B1", "(blank)")]:
+            run("click", f'#grid [data-addr="{addr}"] button')
+            run("wait", "--fn", f"{root}.querySelector('.wi-address').textContent === '{addr}'")
+            check(f"!{root}.querySelector('.wi-evidence')")
+            click(".wi-inspect")
+            run("wait", "--fn", ready + f" && !!{root}.querySelector('.wi-evidence')")
+            check(f"{root}.querySelector('.wi-evidence dd').textContent === {text!r}")
+        check("document.querySelectorAll('.trace-row').length === 0")
+        check("document.getElementById('request-count').textContent === '15 simulated API requests'")
+        check(f"{root}.querySelector('.wi-scope').textContent.includes('Not connected')")
+        run("eval", f"{root}.querySelector('[data-tab=inspect]').focus()")
+        for key, tab in [("ArrowRight", "scan"), ("ArrowRight", "workbook"), ("Home", "inspect")]:
+            run("press", key)
+            check(f"{root}.activeElement.getAttribute('data-tab') === '{tab}'")
+            check(f"{root}.querySelector('[role=tabpanel]').getAttribute('aria-labelledby') === 'wm-tab-{tab}'")
+
+        # Hold actual messages to drive otherwise hard-to-reproduce response orderings.
+        # These cases verify the controller, not the HTTP client or Workiva integration.
+        run("eval", """(() => {
+          window.savedSend = chrome.runtime.sendMessage;
+          window.pending = [];
+          chrome.runtime.sendMessage = (msg, cb) => {
+            if (msg.path?.startsWith('/api/inspect') || msg.path?.startsWith('/api/queue')) pending.push({msg, cb});
+            else savedSend(msg, cb);
+          };
+          window.answer = (entry, value) => {
+            var q = new URL(entry.msg.path, location.origin).searchParams;
+            entry.cb({ok:true, data:{target:Object.fromEntries(q), readOnly:true, status:'observed',
+              observedAt:new Date().toISOString(), sheetName:'Synthetic reply',
+              content:{status:'observed', kind:'number', value}, calculated:{status:'observed', value},
+              nativeFormat:{status:'observed', value:{valueFormatType:'NUMBER'}}, warnings:[]}});
+          };
+        })()""")
+        click(".wi-inspect")
+        run("wait", "--fn", f"{root}.querySelector('.wi-inspect').disabled && pending.length === 1")
+        # Change and return to the same cell; identity alone cannot detect the stale request.
+        run("click", '#grid [data-addr="C8"] button')
+        run("wait", "--fn", f"{root}.querySelector('.wi-address').textContent === 'C8'")
+        run("click", '#grid [data-addr="B1"] button')
+        run("wait", "--fn", f"{root}.querySelector('.wi-address').textContent === 'B1'")
+        click(".wi-inspect")
+        run("eval", "answer(pending.pop(), 123); answer(pending.shift(), 999)")
+        run("wait", "--fn", f"{root}.querySelector('.wi-evidence dd')?.textContent === '123'")
+
+        # URL-only navigation with unchanged A1 must clear evidence without another read.
+        run("eval", "history.replaceState(null, '', '#/spreadsheet/de00/sheet/de02')")
+        run("wait", "--fn", f"!{root}.querySelector('.wi-evidence') && {root}.querySelector('.wi-sheet').textContent === 'Sheet de02'")
+        check("pending.length === 0")
+        run("eval", "history.replaceState(null, '', '#/spreadsheet/abcd/sheet/de02')")
+        click(".wi-inspect")
+        run("eval", "pending.shift().cb({ok:true, data:{readOnly:true,target:{spreadsheetId:'de00',sheetId:'de02',addr:'B1'}}})")
+        run("wait", "--fn", f"{root}.querySelector('.wi-inspector').textContent.includes('did not match')")
+        check(f"!{root}.querySelector('.wi-evidence')")
+
+        # A late error or success from an old scan must never replace Inspect.
+        for tab in ("scan", "workbook"):
+            for error in [True, False]:
+                click(f"[data-tab={tab}]")
+                click(".wm-tab-actions .wm-btn.primary")
+                click("[data-tab=inspect]")
+                reply = "{ok:false,offline:true}" if error else "{ok:true,data:{items:[],sheets:[]}}"
+                run("eval", f"pending.shift().cb({reply})")
+                check(f"!!{root}.querySelector('.wi-inspector')")
+
+        click(".wi-inspect")
+        click("[data-tab=scan]")
+        run("eval", "answer(pending.shift(), 999)")
+        click("[data-tab=inspect]")
+        check(f"!{root}.querySelector('.wi-evidence') && !{root}.querySelector('.wi-inspect').disabled")
+        click(".wi-inspect")
+        run("click", "#open-panel")
+        run("eval", "answer(pending.shift(), 999)")
+        run("click", "#open-panel")
+        check(f"!{root}.querySelector('.wi-evidence')")
+        click(".wi-inspect")
+        run("eval", "pending.shift().cb({ok:false,offline:true})")
+        run("wait", "--fn", f"{root}.querySelector('.wi-inspector').textContent.includes('No cell was inspected')")
+        click(".wi-inspect")
+        run("eval", "answer(pending.shift(), '<img src=x onerror=alert(1)>')")
+        check(f"!{root}.querySelector('.wi-evidence img')")
+        check(f"{root}.querySelector('.wi-evidence dd').textContent === '<img src=x onerror=alert(1)>'")
+
+        run("eval", "document.getElementById('address').textContent = 'B1:C8'")
+        run("wait", "--fn", f"{root}.querySelector('.wi-inspector').textContent.includes('not a range')")
+        check(f"!{root}.querySelector('.wi-inspect') && !{root}.querySelector('.wi-evidence')")
+        run("eval", "history.replaceState(null, '', '#/doc/abcd')")
+        run("wait", "--fn", f"{root}.querySelector('.wi-inspector').textContent.includes('Document and comment tracing is not connected')")
+        check("pending.length === 0")
+        run("eval", "history.replaceState(null, '', '#/spreadsheet/de00/sheet/de01'); document.getElementById('address').textContent='B7'")
+        run("wait", "--fn", f"!!{root}.querySelector('.wi-inspect')")
+        run("eval", f"{root}.querySelector('.wi-inspect').focus()")
+        run("press", "Enter")
+        check(f"{root}.activeElement.classList.contains('wi-inspector')")
+        run("eval", "answer(pending.shift(), 42)")
+        check(f"{root}.activeElement.classList.contains('wi-inspect')")
+        click(".wi-inspect")
+        run("eval", "chrome.runtime.id=undefined")
+        run("wait", "--fn", f"{root}.querySelector('.wi-inspector').textContent.includes('Extension reloaded')")
+        run("eval", "answer(pending.shift(), 999)")
+        check(f"!{root}.querySelector('.wi-evidence') && !{root}.querySelector('.wi-inspect').disabled")
         assert not run("errors").strip(), "Browser reported uncaught JavaScript errors"
     finally:
         run("close")

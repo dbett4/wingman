@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/demo/demo.css">
   <script src="/demo/demo.js" defer></script>
   <script src="/wingman-core.js" defer></script>
+  <script src="/wingman-inspector.js" defer></script>
   <script src="/wingman-panel.js" data-wingman-demo defer></script>
 </head>
 <body>
@@ -19,8 +20,8 @@
   </header>
   <main>
     <section class="intro" aria-labelledby="headline">
-      <div><p class="eyebrow">FINANCIAL WORKBOOK REVIEW</p><h1 id="headline">Catch what a tie-out misses.</h1>
-        <p>Find hidden defects. Preview a narrow fix. Check what actually changed.</p></div>
+      <div><p class="eyebrow">FINANCIAL WORKBOOK REVIEW</p><h1 id="headline">Understand the cell first.</h1>
+        <p>Separate what is stored, what calculates, and what still needs evidence.</p></div>
       <div class="simulation"><strong>Real detectors. Fictional workbook.</strong><br>No account, installation, or Workiva connection.<br>Your session is isolated and resets after an hour.</div>
     </section>
     <div class="workspace">
@@ -34,9 +35,9 @@
         </section>
         <section class="guide" aria-labelledby="guide-title">
           <h2 id="guide-title">A two-minute review</h2>
-          <ol><li><strong>Find the evidence.</strong> Start with the year in B2, whitespace in A4, and low-contrast label in A5.</li>
-            <li><strong>Preview, then apply.</strong> In Wingman, open a fixable finding and select “Check fixes.” Nothing changes until “Apply.”</li>
-            <li><strong>Keep judgment human.</strong> The hardcoded formula and broken reference remain review items.</li></ol>
+          <ol><li><strong>Inspect one cell.</strong> Select B7, then “Inspect selected cell.” Compare the formula with its calculated result.</li>
+            <li><strong>Know the limits.</strong> Source policy and downstream reports are not connected. A stored number alone is not a defect.</li>
+            <li><strong>Try the existing scanner.</strong> Open Scan and click Scan. Its preview/apply workflow remains separate from the read-only inspector.</li></ol>
           <div class="demo-actions"><button id="failure" type="button">Make next write mismatch</button><button id="reset" type="button">Reset my workbook</button><button id="report" type="button">Download review packet</button></div>
           <p id="demo-status" role="status">Loading your session…</p>
         </section>

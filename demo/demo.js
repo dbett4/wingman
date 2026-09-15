@@ -85,10 +85,6 @@
         sheetId = s.id; selected = "B2";
         history.replaceState(null, "", "#" + base + sheetId);
         render();
-        var scan = panelRoot().querySelector('.wm-tab[data-tab="scan"]');
-        if (scan) scan.click();
-        var action = panelRoot().querySelector(".wm-tab-actions .wm-btn.primary");
-        if (action) action.click();
       };
       tabs.appendChild(btn);
     });

@@ -218,9 +218,10 @@ class UpstreamHandler(BaseHTTPRequestHandler):
 
 
 ASSETS = {"/": "demo/index.html", "/demo/demo.css": "demo/demo.css", "/demo/demo.js": "demo/demo.js",
+          "/wingman-inspector.js": "extension/wingman-inspector.js",
           "/wingman-core.js": "extension/wingman-core.js", "/wingman-panel.js": "extension/wingman-panel.js",
           "/icons/icon128.png": "extension/icons/icon128.png"}
-GET_ROUTES = {"/config", "/api/queue", "/api/review-packet"}
+GET_ROUTES = {"/config", "/api/inspect", "/api/queue", "/api/review-packet"}
 POST_ROUTES = {"/fix", "/apply", "/demo/reset", "/demo/failure"}
 
 

@@ -568,8 +568,8 @@
 
   // ---- Audit Rail tabs + server-driven presets (pure, unit-tested) ----
   var _serviceConfig = null;
-  var TAB_IDS = ["scan", "checks", "workbook"];
-  var TAB_LABELS = { scan: "Scan", checks: "Checks", workbook: "Workbook" };
+  var TAB_IDS = ["inspect", "scan", "checks", "workbook"];
+  var TAB_LABELS = { inspect: "Inspect", scan: "Scan", checks: "Checks", workbook: "Workbook" };
   function applyServiceConfig(cfg) { _serviceConfig = cfg || null; }
   function presetSpreadsheetId(presetKey) {
     var p = _serviceConfig && _serviceConfig.presets && _serviceConfig.presets[presetKey];

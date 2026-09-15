@@ -42,6 +42,7 @@ import format_lane
 import hardening_gate_bridge
 import detectors
 import fixer
+import inspector
 import review_packet
 import vision_candidates
 import wingman_config
@@ -416,6 +417,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        if _route_path(self.path) == "/api/inspect":
+            self.send_header("Cache-Control", "no-store")
         self._cors(self.headers.get("Origin"))
         self.end_headers()
         self.wfile.write(body)
@@ -470,7 +473,7 @@ class Handler(BaseHTTPRequestHandler):
                     "status": "/api/status",
                     "digest": "/digest",
                     "operator_config": _operator_config_status(),
-                    "guarded_endpoints": ["/api/queue", "/api/checks", "/api/review-packet", "/fix", "/apply"],
+                    "guarded_endpoints": ["/api/inspect", "/api/queue", "/api/checks", "/api/review-packet", "/fix", "/apply"],
                 })
             elif path == "/config":
                 self._send(200, wingman_config.service_config())
@@ -481,6 +484,14 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/digest":
                 import wingman_log_digest as wd  # improvement digest mined from the activity log
                 self._send(200, wd.build_digest(wd.load_events(wingman_log.log_dir())))
+            elif path == "/api/inspect":
+                ss, sh, addr = (q.get(key, [""])[0] for key in ("spreadsheetId", "sheetId", "addr"))
+                try:
+                    inspector.validate_target(ss, sh, addr)
+                except ValueError as exc:
+                    self._send(400, {"error": str(exc)})
+                    return
+                self._send(200, inspector.inspect_cell(ss, sh, addr, _token(), _ctx))
             elif path == "/scan":
                 ss = q.get("spreadsheetId", [""])[0]
                 sh = q.get("sheetId", [""])[0]

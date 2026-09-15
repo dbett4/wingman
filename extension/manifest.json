@@ -29,6 +29,7 @@
       ],
       "js": [
         "wingman-core.js",
+        "wingman-inspector.js",
         "wingman-panel.js"
       ],
       "run_at": "document_idle",
