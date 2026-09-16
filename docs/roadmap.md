@@ -115,9 +115,15 @@ The actual installed MV3 test exercised a cross-sheet formula reference, keyboar
 opening, no opener access, and return without new API reads or writes against
 fictional pages. Missing/mismatched locations have no link. Light/dark and 390px
 renders were inspected; source values precede navigation and keyboard focus is visible.
-This candidate is not deployed. The Mac Workiva tab remains signed out; the shared
-VPS browser lease was unavailable, so no new native-sheet or live in-page proof
-was obtained. Cell selection, general workbook discovery and live acceptance remain open.
+This candidate is not deployed. The Mac sign-in is not a development prerequisite:
+the canonical VPS auth router returned `UI_READY`, and a subsequent serialized
+browser check opened both the approved old RCTC report and its companion's
+Stmt Activities FY25 sheet. Exact URLs/titles and inspected native screenshots
+confirmed the targets in LSL Sandbox. No Wingman installation was listed in that
+VPS profile and no panel appeared, so this proves native access, not the installed
+extension journey. Adding and pairing Wingman in the shared VPS browser requires
+separate installation approval. Cell selection, general workbook discovery and
+live extension acceptance remain open.
 
 The September 16 private activation used the owner-selected older RCTC sandbox pair,
 not an audit client. The installed Mac broker read the Statement of Activities table
