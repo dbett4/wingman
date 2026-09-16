@@ -86,9 +86,11 @@ its alleged universal content-script suppression was not established. Disposable
 installed-extension tests now exercise the real worker and content scripts against
 a fictional page. They do not establish compatibility with live Workiva.
 
-## Report-to-source navigation in the next local candidate
+## Report-to-source navigation in the validated candidate
 
-This improvement is tested locally but not yet installed in the owner's browsers.
+This improvement passed local tests and an owner-approved temporary VPS trial on
+the old RCTC pair: D12 → J18 → the actual companion sheet → return. The temporary
+installation was removed afterward; the existing Mac package was not updated.
 In a current report section, choose **Read section tables**, select a table and enter
 one A1 cell address. To help locate a linked source sheet, expand **Locate source
 sheets (optional)** and paste a current sheet URL from the companion workbook on
@@ -131,3 +133,7 @@ Disabling Wingman in Chrome stops the extension without deleting its private fil
 Removing it through Chrome removes the browser installation, not the VPS service
 or SSH tunnel. Those have separate rollback steps in the deployment guide. Do not
 revive the retired Mac service during recovery.
+
+For approved temporary VPS trials, save the trial result before cleanup readback.
+Verify removal under `/srv/workiva-ui` with the privilege needed to traverse that
+protected parent; an unprivileged permission error is not proof of absence.

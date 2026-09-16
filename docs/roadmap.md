@@ -128,16 +128,29 @@ services were not restarted. This proves the bounded live in-page journey, not
 accounting accuracy or new-reviewer acceptance. Mac sign-in is not a VPS prerequisite.
 
 That trial exposed a missing path: a report-origin source request had no workbook
-candidate, so it correctly offered no native sheet link. The next local improvement
-adds an optional **Companion workbook URL** beneath **Locate source sheets** in the
+candidate, so it correctly offered no native sheet link. The follow-up adds an
+optional **Companion workbook URL** beneath **Locate source sheets** in the
 table chooser. Only a current sheet URL on the report's site and in its workspace
 is accepted; only the workbook ID is sent, on an explicit source-follow request.
 The backend still must prove source-table membership at the recorded revision.
 The candidate survives rereads but clears on a new choice or context. Installed
 fictional tests cover wrong site/workspace/history without a read, unverified
 membership without a link, verified membership with keyboard opening and return,
-and 390px/light/dark layouts. This improvement is not installed in the owner's Mac
-or shared VPS browser and has not yet passed the live RCTC companion-navigation trial.
+and 390px/light/dark layouts.
+
+The owner-approved follow-up VPS trial passed on the same old RCTC pair. Entering
+the companion URL let the backend verify J18's source location at its saved
+revision. Keyboard activation opened the actual companion's **Stmt Activities FY25**
+sheet in a new tab with no opener access. The grid and selected sheet were visually
+inspected. Switching back retained the exact source formula and trail; returning to
+D12 restored 0 without additional observed Wingman API requests or a changed report
+URL. It opens today's sheet, not a selected historical J18 cell. The temporary
+extension, package, pairing copy and trial tabs were removed; privileged path and
+serialized Chrome readback confirmed cleanup. The harness's initial nonprivileged
+post-removal path check failed on the protected parent; this was recovered without
+replaying the trial. Both services retained their PIDs and zero restarts. No product
+code repair was needed. This is a bounded live journey, not G2 or product acceptance;
+the updated build is not permanently installed in either browser.
 
 The September 16 private activation used the owner-selected older RCTC sandbox pair,
 not an audit client. The installed Mac broker read the Statement of Activities table
