@@ -37,6 +37,26 @@ page, not a Workiva session. Dark/light and narrow connection views were inspect
 These results do not prove live compatibility, detector accuracy, write safety under
 concurrent edits, or usability by a new reviewer. No goal below is closed by this baseline.
 
+## Published and installed September 16, 2026
+
+The owner approved publishing the revamp, deploying the VPS backend and updating the
+existing Mac extension. GitHub `main` received all eighteen implementation/history
+commits through [the coverage repair](https://github.com/dbett4/wingman/commit/0ee4f35957a0c53661dd1feffe8a76ca5aae2b85).
+GitHub CI passed both Python versions and the demo-browser job. That exact runtime
+release is active on the VPS; 85 archived files matched the commit. Fourteen Mac
+runtime/checker files matched the same source; the pairing was preserved, Chrome
+reloaded the existing extension with zero manifest/runtime errors, and the setup
+button reached the deployed service through the existing SSH tunnel.
+
+Read-only enforcement, the account pin, resource scope and IP allowlist are unchanged.
+Authentication and repair/export refusal checks passed on both hosts. A bounded live
+read matched the old RCTC report's catalog revision, D12, J18's recorded formula/result
+and source-sheet membership. Previous code/package versions remain available for
+rollback. This does not validate workbook-wide scans, detector accuracy or a new
+reviewer's workflow. All seven goals remain open. Earlier local-only and temporary
+installation observations below describe their original test stages, not this latest
+authorized installation.
+
 ## G1. A reviewer can install, connect and recover without developer help
 
 Why: a polished panel is not a usable product if the service connection is opaque.

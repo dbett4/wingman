@@ -86,11 +86,18 @@ its alleged universal content-script suppression was not established. Disposable
 installed-extension tests now exercise the real worker and content scripts against
 a fictional page. They do not establish compatibility with live Workiva.
 
-## Report-to-source navigation in the validated candidate
+## Report-to-source navigation in the installed private build
 
 This improvement passed local tests and an owner-approved temporary VPS trial on
 the old RCTC pair: D12 → J18 → the actual companion sheet → return. The temporary
-installation was removed afterward; the existing Mac package was not updated.
+installation was removed afterward. The owner's later September 16 update installed
+[the published runtime](https://github.com/dbett4/wingman/commit/0ee4f35957a0c53661dd1feffe8a76ca5aae2b85)
+on the VPS and in the existing Mac extension. Pairing was preserved; Chrome
+153.0.8010.48 reloaded it with zero manifest/runtime errors, and the setup button
+reached the deployed service. Refresh existing Workiva tabs after an extension
+reload to load the updated content scripts. This does not establish the full
+in-page journey in the signed-out Mac Workiva session.
+
 In a current report section, choose **Read section tables**, select a table and enter
 one A1 cell address. To help locate a linked source sheet, expand **Locate source
 sheets (optional)** and paste a current sheet URL from the companion workbook on
