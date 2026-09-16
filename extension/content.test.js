@@ -64,6 +64,19 @@ function eq(label, got, want) {
   eq("native precision and scale", wi.formatText({ status: "observed", value: {
     valueFormatType: "ACCOUNTING", precision: { auto: false, value: 0 }, enteredIn: "ONES", shownIn: "THOUSANDS",
   } }), "ACCOUNTING · 0 decimals · entered in ONES · shown in THOUSANDS");
+  const origin = { target, tableId: "table-a", contentRevision: "rev-9" };
+  const source = { tableId: "table-b", revision: "rev-3", addr: "D6" };
+  const trail = [{ target: source }];
+  eq("new source step permitted", wi.traceBlock(origin, [], source), "");
+  eq("source response matches exact identity", wi.matchesSource(source, { ...source }), true);
+  for (const key of ["tableId", "revision", "addr"]) {
+    eq("source reply rejects changed " + key, wi.matchesSource(source, { ...source, [key]: "foreign" }), false);
+    eq("cycle distinguishes changed " + key, wi.traceBlock(origin, trail, { ...source, [key]: "different" }), "");
+  }
+  eq("same historical source is a cycle", wi.traceBlock(origin, trail, source).startsWith("Already"), true);
+  eq("root cell is part of cycle detection", wi.traceBlock(origin, [], { tableId: "table-a", revision: "rev-9", addr: "C12" }).startsWith("Already"), true);
+  eq("tenth step allowed", wi.traceBlock(origin, Array(9).fill({ target: {} }), source), "");
+  eq("eleventh step blocked", wi.traceBlock(origin, Array(10).fill({ target: {} }), source).startsWith("10-step"), true);
 })();
 
 // --- connection evidence is not Workiva access ---

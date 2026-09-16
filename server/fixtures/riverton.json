@@ -63,6 +63,14 @@
       "id": "demo-basis-disconnected", "revision": "demo-link-4", "status": "disconnected",
       "content": {"type": "table", "table": "de02"},
       "source": {"type": "unidentified", "unidentified": {}}
+    },
+    {
+      "id": "demo-year-support-link", "revision": "demo-link-1", "status": "connected",
+      "content": {"type": "table", "table": "demo-notes-table"},
+      "source": {"type": "anchor", "anchor": {
+        "anchor": "demo-support-anchor", "revision": "demo-support-2",
+        "content": {"type": "table", "table": "demo-year-support"}
+      }}
     }
   ],
   "sourceAnchors": [
@@ -72,6 +80,13 @@
       "attachmentPoint": {"type": "tableRange", "range": {
         "startRow": 5, "stopRow": 5, "startColumn": 3, "stopColumn": 3
       }}
+    },
+    {
+      "id": "demo-support-anchor", "revision": "demo-support-2",
+      "content": {"type": "table", "table": "demo-year-support"},
+      "attachmentPoint": {"type": "tableRange", "range": {
+        "startRow": 10, "stopRow": 10, "startColumn": 4, "stopColumn": 4
+      }}
     }
   ],
   "publishedTables": {
@@ -80,8 +95,17 @@
       "revision": "demo-published-3",
       "startRow": 4,
       "startColumn": 2,
+      "cellLinks": {"D6": {"destinationLink": "demo-year-support-link", "revision": "demo-link-1"}},
       "rows": [["REVIEW NOTES", ""], ["Fiscal year", 2024],
                ["Reporting basis", "Accrual"], ["Scope", "Fictional demonstration only"]]
+    },
+    "demo-year-support": {
+      "name": "Reporting year support",
+      "revision": "demo-support-2",
+      "startRow": 10,
+      "startColumn": 4,
+      "formulas": {"E11": "=E12+1", "E12": "=E11-1"},
+      "rows": [[2023], [2022]]
     }
   },
   "publishedRangeLinks": [

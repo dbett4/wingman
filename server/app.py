@@ -517,6 +517,17 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 self._send(200, inspector.inspect_cell(ss, sh, addr, _token(), _ctx,
                                                       include_sources=q.get("sources") == ["true"]))
+            elif path == "/api/inspect-source":
+                try:
+                    q = urllib.parse.parse_qs(u.query, keep_blank_values=True)
+                    if set(q) != {"tableId", "revision", "addr"} or any(len(v) != 1 for v in q.values()):
+                        raise ValueError("Exactly one tableId, revision and addr required")
+                    table, revision, addr = (q[key][0] for key in ("tableId", "revision", "addr"))
+                    inspector.validate_source_target(table, revision, addr)
+                except ValueError as exc:
+                    self._send(400, {"error": str(exc)})
+                    return
+                self._send(200, inspector.inspect_source(table, revision, addr, _token(), _ctx))
             elif path == "/scan":
                 ss = q.get("spreadsheetId", [""])[0]
                 sh = q.get("sheetId", [""])[0]

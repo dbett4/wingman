@@ -391,3 +391,13 @@ def test_malformed_cell_link_ref_is_not_absence(transport):
     del content["data"][0]["cells"][0]["value"]["destinationLink"]["destinationLink"]["revision"]
     assert sources.cell_link(content, "table-c", "synthetic-token", None)["status"] == "unavailable"
     assert calls == []
+
+
+def test_historical_table_does_not_borrow_origin_workbook_for_named_sheet(transport):
+    _, calls = transport
+    data = sources.source_values(None, "foreign-table", "old-7",
+                                 {"status": "text_only", "references": ["Notes!C12"]},
+                                 {"status": "not_inspected"}, "synthetic-token", None)
+    assert data["status"] == "partial" and data["groups"][0]["status"] == "unavailable"
+    assert "workbook identity is not established" in data["groups"][0]["reason"]
+    assert calls == []

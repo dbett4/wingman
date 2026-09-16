@@ -67,8 +67,15 @@ become “unlinked,” and connected does not mean correct or up to date.
 references use the selected content revision; incoming links use their recorded
 source revisions, never a latest-revision substitute. Formula extraction is
 text-only, not evaluation or reconciliation. Named, external, structured, computed,
-and unbounded references remain unresolved. Inline rich-text links, non-table
-source content, and multi-hop source chains are not traced.
+and unbounded references remain unresolved. **Inspect [cell] source** follows one
+supported table-cell step at its recorded revision. A return trail retains earlier
+evidence and the original value without moving Workiva's selection or rereading
+on return. Cycles and the 10-step limit are explicit; cancellation, timeout and
+scope changes reject late replies. Historical source views do not borrow today's
+native format or range-link lists, or infer a source workbook from the origin.
+Named-sheet references at those steps remain unresolved without a verified workbook
+identity. Inline rich-text links, non-table sources and automatic full-chain
+expansion are not supported. In-panel tracing is not cross-sheet or document navigation.
 
 Engagement policy, document comments, and downstream report checks are not
 connected. Page IDs do not prove client, fiscal year, or working-copy

@@ -90,6 +90,18 @@ Workiva sandbox test are required. Blocks live acceptance of G2–G5 and G7.
 
 Why: a table-level link or a green status does not explain an individual amount.
 
+**Open.** The local candidate now follows table-cell evidence on request, with a
+revision-bound return trail, retained origin value, cycle detection and a 10-step
+limit. Fictional two-step chains pass through both the demo and the installed
+MV3 worker/handler; return performs no new reads or writes. Wrong revisions,
+missing evidence, cancellation, timeout and stale replies have regression coverage.
+Historical views deliberately omit native format, range-link listings and
+named-sheet resolution when the source workbook identity is unknown. This is
+in-panel evidence navigation, not movement across Workiva sheets or documents.
+Verified source-workbook mapping, cross-sheet navigation, the linked document-table
+journey and authorized live sandbox proof remain open. The candidate has not
+replaced the commissioned service or owner's installed extension.
+
 - Support the complete review journey across spreadsheet cells and linked document
   tables: inspect a value, see the supported source/destination relationship,
   navigate to that location, and return to the origin with a breadcrumb trail.

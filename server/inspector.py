@@ -12,7 +12,7 @@ import re
 from urllib.parse import urlsplit
 
 import wk_client as wk
-from cell_sources import cell_link, formula_references, range_links, read_cells, source_values, stored_content
+from cell_sources import cell_link, formula_references, range_links, read_cells, source_values, stored_content, table_properties
 
 
 def validate_target(spreadsheet_id, sheet_id, addr):
@@ -69,6 +69,53 @@ def _observe(read):
         return {"status": "unavailable", "reason": type(exc).__name__}
 
 
+def validate_source_target(table_id, revision, addr):
+    if any(not isinstance(v, str) or not v.strip() or len(v) > 2048
+           or any(ord(c) < 32 for c in v) for v in (table_id, revision)):
+        raise ValueError("A source tableId and recorded revision are required")
+    if not re.fullmatch(r"[A-Z]{1,3}[1-9][0-9]{0,6}", addr or ""):
+        raise ValueError("Select one source cell, such as D6")
+
+
+def inspect_source(table_id, revision, addr, token, ctx):
+    """Inspect one historical table cell and its direct sources, only on request.
+
+    A table identity does not establish its owning workbook. Do not use current
+    sheetdata, infer a workbook from the origin, or mix in latest range-link lists.
+    """
+    validate_source_target(table_id, revision, addr)
+    result = {
+        "target": {"tableId": table_id, "revision": revision, "addr": addr},
+        "readOnly": True, "status": "unavailable", "sourceValuesRequested": True,
+        "observedAt": datetime.now(timezone.utc).isoformat(), "warnings": [],
+    }
+    try:
+        props = table_properties(table_id, revision, token, ctx)
+        row, col = wk.rc_from_a1(addr)
+        raw = read_cells(table_id, (row, row, col, col), token, ctx, revision)
+        cell = raw["data"][0]["cells"][0]
+        content = stored_content(cell)
+    except Exception:
+        result["warnings"].append("Source unavailable at its recorded revision. No latest-revision substitute or new evidence returned.")
+        return result
+    value = cell["value"]
+    computed = value.get("formula") if isinstance(value, dict) and value.get("type") == "formula" else None
+    calculated = ({"status": "observed", "value": computed["calculatedValue"]}
+                  if isinstance(computed, dict) and "calculatedValue" in computed else {"status": "unavailable"})
+    formula = formula_references(content)
+    linked_cell = cell_link(raw, table_id, token, ctx)
+    links = {"status": "not_inspected"}
+    result.update(status="partial", tableName=props.get("name"), tableId=table_id,
+                  contentRevision=revision, content=content, calculated=calculated,
+                  nativeFormat={"status": "not_inspected"}, source={
+                      "formula": formula, "cellLink": linked_cell, "rangeLinks": links,
+                      "values": source_values(None, table_id, revision, formula, links, token, ctx,
+                                              linked_cell=linked_cell),
+                  })
+    result["warnings"].append("Historical content only. Range-link lists, native format and source workbook location are not inspected. Named-sheet references cannot be followed without that workbook identity.")
+    return result
+
+
 def inspect_cell(spreadsheet_id, sheet_id, addr, token, ctx, *, include_sources=False):
     validate_target(spreadsheet_id, sheet_id, addr)
     target = {"spreadsheetId": spreadsheet_id, "sheetId": sheet_id, "addr": addr}
@@ -90,6 +137,7 @@ def inspect_cell(spreadsheet_id, sheet_id, addr, token, ctx, *, include_sources=
     table = sheet.get("table")
     result["revision"] = table.get("revision") if isinstance(table, dict) else None
     table_id = table.get("table") if isinstance(table, dict) else None
+    result["tableId"] = table_id
     read_cell = lambda: _cell(spreadsheet_id, sheet_id, addr, token, ctx)
     read_content = lambda: _content(table_id, addr, token, ctx)
     cell, content = _observe(read_cell), _observe(read_content)

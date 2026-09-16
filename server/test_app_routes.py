@@ -225,6 +225,24 @@ class HandlerRouteTests(unittest.TestCase):
                 self.assertEqual(code, 400, query)
             token.assert_not_called()
 
+    def test_source_inspection_requires_token_and_exact_revision_target(self):
+        from unittest.mock import patch
+
+        path = "/api/inspect-source?tableId=source&revision=rev-7&addr=C12"
+        with patch.object(app, "_token", side_effect=AssertionError("OAuth must not run")) as token:
+            self.assertEqual(self._request(path, token=False)[0], 403)
+            for query in ("tableId=x&addr=C12", "tableId=x&revision=&addr=C12",
+                          "tableId=x&revision=r&addr=C12:D13", "tableId=x&revision=r&addr=C0",
+                          "tableId=x&revision=r&addr=C12&revision=s", "tableId=x&revision=r&addr=C12&spreadsheetId=y",
+                          "tableId=x&revision=%0A&addr=C12"):
+                self.assertEqual(self._request("/api/inspect-source?" + query)[0], 400, query)
+            token.assert_not_called()
+        with patch.object(app, "_token", return_value="synthetic"), \
+             patch.object(app.wingman_config, "read_only_enabled", return_value=True), \
+             patch.object(app.inspector, "inspect_source", return_value={"readOnly": True}) as inspect:
+            self.assertEqual(self._request(path), (200, {"readOnly": True}))
+            inspect.assert_called_once_with("source", "rev-7", "C12", "synthetic", app._ctx)
+
     def test_guarded_route_rejects_when_service_token_missing(self):
         original = app.WINGMAN_TOKEN
         app.WINGMAN_TOKEN = ""

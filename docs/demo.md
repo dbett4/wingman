@@ -23,7 +23,13 @@ return to the review.
    Choose **Read source values** to fetch B7's four referenced amounts or B2's
    exact cell source and published source range. Source `D6` deliberately contains
    fiscal year `2024` while selected B2 shows `2025`; neither is automatically
-   declared correct. Inspect Review notes B3: it still displays `Accrual`, but its
+   declared correct. Choose **Inspect D6 source**, then **Inspect E11 source**:
+   the second table contains `=E12+1`, with seeded result `2023`. The return trail
+   shows **Selected B2 → D6 → E11**, keeping the original `2025` in view.
+   E12 contains `=E11-1`, seeded to `2022`; following it demonstrates a cycle that
+   cannot be expanded again. Use the trail or **Return to selected cell** to
+   restore earlier evidence without new reads. None of these actions moves the
+   Workiva selection. Inspect Review notes B3: it still displays `Accrual`, but its
    cell link is disconnected. The covering range link does not prove this cell's
    connection, and Wingman does not infer a source cell from range offsets.
    Reads are limited to 100 cells across 10 ranges, never silently sampled.
@@ -63,13 +69,15 @@ to update them. Packet download always runs a fresh workbook scan.
 | Service | `app.Handler` inspect, scan, preview, apply, and packet routes; demo wrapper restricts accessible routes |
 | Connection check | Demo-only response identifying the simulation; no token or Workiva credential validation |
 | Inspect path | Metadata lookup, two pairs of single-cell sheetdata/content HTTP reads, formula tokenization, table range links, revision-specific source-range lookup, and cell destination-link/source-anchor lookup; opt-in bounded source-cell reads; no detectors or writes |
+| Source trail | Guarded `/api/inspect-source` route reads a requested table cell and direct evidence at recorded revisions; no recursion, inferred workbook identity, current sheetdata or latest range-link listing |
 | Read/scan path | Real HTTP client, two-page sheetdata reads, formula/type enrichment, detectors, grouping, diagnosis |
 | Fix path | Real fixer and account/workbook gates, using a synthetic identity and a fictional-only allowlist |
 | Upstream | In-memory HTTP simulator supporting only the fixture's endpoints; seeded formula results, immediate writes |
 | Fault injection | One incorrect value/format write, followed by a successful restore request |
 
-The fixture simulates source/destination metadata and a fixed published source
-table. No source values or destination updates propagate. Not simulated: actual Workiva DOM changes, OAuth, live range links, rate limits,
+The fixture simulates source/destination metadata and fixed historical source
+tables, including a deliberately cyclic formula pair with seeded results.
+No source values or destination updates propagate. Not simulated: actual Workiva DOM changes, OAuth, live range links, rate limits,
 eventual consistency, async operation jobs, collaborative edits, process-crash
 recovery, rich-text editing, vision, external checks, publishing, or PDF proof.
 The demo is **not evidence of live integration compatibility or measured accuracy**.
@@ -88,7 +96,14 @@ If the origin's content revision or cell changes during the read, all evidence
 is discarded. This is still **not an atomic snapshot of cells and links**.
 Named, external, dynamic, and unbounded references remain explicit; inline
 rich-text links, non-table source content, and the full dependency chain are not
-traversed. Source addresses are evidence, not cross-sheet navigation controls.
+automatically traversed. A source step reads one cell plus up to 100 direct source
+cells across 10 ranges, only on request. The trail stops at 10 steps and detects
+repeat table/revision/cell identities. Historical steps leave native formats,
+range-link lists and named-sheet references uninspected rather than borrow current
+metadata or the origin workbook. Stop waiting, a 30-second deadline, returning,
+changing tabs and changing scope invalidate pending source replies; errors retain
+earlier evidence. This does not cancel an in-flight backend read. Source addresses
+are in-panel evidence controls, not cross-sheet navigation controls.
 
 The zero-display finding currently receives a column-majority review target even
 though the fixture does not establish an em-dash convention. This is an evaluation

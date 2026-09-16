@@ -24,6 +24,16 @@
   function matches(target, reply) {
     return !!reply && ["spreadsheetId", "sheetId", "addr"].every(function (k) { return target[k] === reply[k]; });
   }
+  function matchesSource(target, reply) {
+    return !!reply && ["tableId", "revision", "addr"].every(function (k) { return target[k] === reply[k]; });
+  }
+  function traceBlock(origin, trail, target) {
+    var seen = [{ tableId: origin.tableId, revision: origin.contentRevision, addr: origin.target.addr }]
+      .concat(trail.map(function (data) { return data.target; }));
+    if (seen.some(function (prior) { return matchesSource(target, prior); })) return "Already in this trail — use the return path above.";
+    if (trail.length >= 10) return "10-step limit reached. Return to an earlier step to explore another source.";
+    return "";
+  }
   function valueText(observation) {
     if (!observation || observation.status !== "observed") return "Not available";
     var value = observation.formula || observation.value;
@@ -31,6 +41,7 @@
     return typeof value === "string" ? value : JSON.stringify(value);
   }
   function formatText(observation) {
+    if (observation && observation.status === "not_inspected") return "Not inspected at this revision";
     if (!observation || observation.status !== "observed") return "Not available";
     var vf = observation.value;
     var parts = [vf.valueFormatType || "Type not provided"];
@@ -40,8 +51,9 @@
     return parts.join(" · ");
   }
 
-  function render(body, context, state, inspect) {
+  function render(body, context, state, inspect, follow, back) {
     var hadFocus = body.contains(body.getRootNode().activeElement);
+    var trail = state.trail || [], tracing = trail.length > 0;
     function el(tag, cls, text) {
       var e = document.createElement(tag);
       if (cls) e.className = cls;
@@ -52,7 +64,7 @@
     page.setAttribute("aria-label", "Selected cell inspector");
     page.tabIndex = -1;
     var head = el("div", "wi-heading");
-    head.appendChild(el("span", "wi-eyebrow", "SELECTED CELL"));
+    head.appendChild(el("span", "wi-eyebrow", tracing ? "SOURCE EVIDENCE" : "SELECTED CELL"));
     head.appendChild(el("span", "wi-readonly", "Read-only"));
     page.appendChild(head);
     if (!context.target) {
@@ -62,13 +74,34 @@
       if (hadFocus) page.focus();
       return;
     }
-    var target = context.target, data = state.data;
+    var data = tracing ? trail[trail.length - 1] : state.data;
+    var target = tracing ? data.target : context.target;
+    if (tracing) {
+      var navigation = el("nav", "wi-trail");
+      navigation.setAttribute("aria-label", "Source evidence return path");
+      [state.data].concat(trail).forEach(function (entry, index) {
+        if (index) navigation.appendChild(el("span", "wi-trail-arrow", "→"));
+        var label = index === 0 ? "Selected " + entry.target.addr : entry.target.addr;
+        var step = el(index === trail.length ? "span" : "button", "wi-trail-step", label);
+        step.title = (entry.sheetName || entry.tableName || entry.tableId || "Source") + " · " + entry.contentRevision;
+        step.setAttribute("aria-label", label + " · " + step.title);
+        if (index === trail.length) step.setAttribute("aria-current", "step");
+        else { step.type = "button"; step.onclick = function () { back(index); }; }
+        navigation.appendChild(step);
+      });
+      page.appendChild(navigation);
+      page.appendChild(el("p", "wi-origin", "Started at " + (state.data.sheetName || "Selected sheet") + " · " +
+        context.target.addr + ": " + valueText(state.data.content) +
+        (state.data.content.kind === "formula" ? " · result " + valueText(state.data.calculated) : "") +
+        " · revision " + state.data.contentRevision));
+    }
     page.appendChild(el("h2", "wi-address", target.addr));
-    page.appendChild(el("p", "wi-sheet", data && data.sheetName ? data.sheetName : "Sheet " + target.sheetId));
-    var button = el("button", "wm-btn primary wi-inspect", state.loading ? "Reading cell…" : "Inspect selected cell");
+    page.appendChild(el("p", "wi-sheet", tracing ? data.tableName || "Source table" : data && data.sheetName ? data.sheetName : "Sheet " + target.sheetId));
+    if (tracing) page.appendChild(el("p", "wi-description", "Recorded revision: " + target.revision + ". Your Workiva selection has not moved."));
+    var button = el("button", "wm-btn primary wi-inspect", tracing ? "Return to selected cell" : state.loading ? "Reading cell…" : "Inspect selected cell");
     button.type = "button";
     button.disabled = !!state.loading;
-    button.onclick = inspect;
+    button.onclick = tracing ? function () { back(0); } : inspect;
     page.appendChild(button);
     var feedback = el("p", "wi-description");
     feedback.setAttribute("role", "status");
@@ -77,9 +110,22 @@
       : "Reading " + target.addr + " and its link metadata. No workbook scan or changes.")
       : data && data.status === "unavailable" ? "No cell evidence returned. Inspect again to retry."
       : data && data.status === "changed" ? "Cell or content revision changed while reading. Inspect again."
-      : data ? "Read at " + new Date(data.observedAt).toLocaleTimeString() + ". Inspect again after edits."
+      : data ? "Read at " + new Date(data.observedAt).toLocaleTimeString() + (tracing
+        ? ". Saved evidence, not a live update." : ". Inspect again after edits.")
         : "See the content, result and format separately. No changes will be made.");
     page.appendChild(feedback);
+    if (state.traceLoading || state.traceError) {
+      var traceFeedback = el("p", "wi-warning wi-trace-status", state.traceError ||
+        "Reading " + state.traceLoading.addr + " at its recorded revision and up to 100 direct source cells / 10 ranges…");
+      traceFeedback.setAttribute("role", "status");
+      page.appendChild(traceFeedback);
+      if (state.traceLoading) {
+        var cancel = el("button", "wm-btn wi-trace-cancel", "Stop waiting");
+        cancel.type = "button";
+        cancel.onclick = function () { back(trail.length); };
+        page.appendChild(cancel);
+      }
+    }
     function row(parent, label, text, code) {
       var item = el("div", "wi-row");
       item.appendChild(el("dt", null, label));
@@ -102,7 +148,7 @@
           blank: "The stored content is blank. This alone does not establish a broken link.",
           boolean: "This cell stores a boolean value, not a financial amount.",
           raw_value: "Workiva returns this raw content as text. That does not establish its numeric type or whether it should be a formula.",
-          linked_value: "Workiva identifies a cell-level linked value. This link's full source chain is not traced here.",
+          linked_value: "Workiva identifies a cell-level linked value. Follow available source cells below, one step at a time.",
         };
         var explanation = explanations[data.content && data.content.kind];
         if (explanation === undefined) explanation = "Stored content could not be classified. No hardcode or formula judgment is made.";
@@ -111,7 +157,7 @@
       if (data.content || data.calculated) {
         var sources = el("details", "wi-sources wi-details");
         sources.setAttribute("aria-label", "References and links");
-        sources.open = !!state.sources;
+        sources.open = tracing || !!state.sources;
         var source = data.source || {}, formula = source.formula || {}, links = source.rangeLinks || {};
         var sourceValues = source.values;
         var cellLink = source.cellLink;
@@ -171,7 +217,7 @@
         }
         var canReadSources = (formula.references || []).length || (cellLink && cellLink.resolution === "observed") ||
           items.some(function (link) { return link.direction === "destination"; });
-        if (canReadSources) {
+        if (canReadSources && !tracing) {
           var sourceButton = el("button", "wm-btn wi-read-sources", sourceValues ? "Refresh source values" : "Read source values");
           sourceButton.type = "button";
           sourceButton.onclick = function () { inspect(true); };
@@ -186,12 +232,12 @@
             block.appendChild(el("summary", null, (group.basis === "cell_link_revision" ? "Cell-link source · " : "") +
               (group.name || "Source table") + " · " + (group.reference || "Range unresolved")));
             if (group.basis === "cell_link_revision") {
-              var selected = el("p", "wi-description wi-selected-content", "Selected " + target.addr + " stored content: ");
+              var selected = el("p", "wi-description wi-selected-content", (tracing ? "This step " : "Selected ") + target.addr + " stored content: ");
               selected.appendChild(el("code", null, valueText(data.content)));
               block.appendChild(selected);
             }
             var revisionLabel = group.basis === "published_revision" ? "Published revision: "
-              : group.basis === "cell_link_revision" ? "Source anchor revision: " : "Selected content revision: ";
+              : group.basis === "cell_link_revision" ? "Source anchor revision: " : "Content revision: ";
             block.appendChild(el("p", "wi-description", revisionLabel + (group.revision || "Not available")));
             if (group.status !== "observed") {
               block.appendChild(el("p", "wi-warning", group.reason));
@@ -208,6 +254,16 @@
                 cellRow.appendChild(address);
                 value.appendChild(el("code", null, valueText(cell.content)));
                 if (cell.content.kind === "formula") value.appendChild(el("div", "wi-source-result", "Formula result: " + valueText(cell.calculated)));
+                if (follow) {
+                  var next = { tableId: group.tableId, revision: group.revision, addr: cell.addr };
+                  var blocked = traceBlock(state.data, trail, next);
+                  var followButton = el("button", "wm-btn wi-follow", "Inspect " + cell.addr + " source");
+                  followButton.type = "button";
+                  followButton.disabled = !!state.traceLoading || !!blocked;
+                  followButton.onclick = function () { follow(next); };
+                  value.appendChild(followButton);
+                  if (blocked) value.appendChild(el("p", "wi-description wi-trace-block", blocked));
+                }
                 cellRow.appendChild(value);
                 tbody.appendChild(cellRow);
               });
@@ -218,7 +274,7 @@
             block.appendChild(identity);
             sources.appendChild(block);
           });
-          sources.appendChild(el("p", "wi-description", "Raw content and formula results are not presentation-formatted. These are direct reads, not a full source chain or a reconciliation."));
+          sources.appendChild(el("p", "wi-description", "Inspect a source to read that cell and its direct evidence at the recorded revision. Up to 10 steps per trail; return without rereading. Raw values are not presentation-formatted or reconciled."));
         } else if (data.sourceValuesRequested) {
           sources.appendChild(el("p", "wi-warning", "Source values were not retained because the selected content could not be rechecked. Inspect again."));
         }
@@ -249,7 +305,7 @@
           linkDetail.appendChild(fields);
           sources.appendChild(linkDetail);
         });
-        sources.appendChild(el("p", "wi-description", "Single-step cell and range links only; inline text links and the full source chain are not traced. Connected does not mean a report is correct or up to date."));
+        sources.appendChild(el("p", "wi-description", "Only requested steps are traced. Inline text links and the full source chain are not inspected. Connected does not mean a report is correct or up to date."));
         page.appendChild(sources);
       }
       (data.warnings || []).forEach(function (warning) {
@@ -258,10 +314,15 @@
       var detail = el("details", "wi-details");
       detail.appendChild(el("summary", null, "Context & raw format"));
       var metadata = el("dl", "wi-evidence");
-      row(metadata, "Page workspace", target.workspaceId || "Not supplied by this page");
-      row(metadata, "Workbook ID", target.spreadsheetId, true);
-      row(metadata, "Sheet ID", target.sheetId, true);
-      row(metadata, "Metadata revision", data.revision || "Not provided; not a pinned snapshot", true);
+      if (tracing) {
+        row(metadata, "Source table ID", target.tableId, true);
+        row(metadata, "Source workbook location", "Not established; no workbook navigation offered");
+      } else {
+        row(metadata, "Page workspace", target.workspaceId || "Not supplied by this page");
+        row(metadata, "Workbook ID", target.spreadsheetId, true);
+        row(metadata, "Sheet ID", target.sheetId, true);
+        row(metadata, "Metadata revision", data.revision || "Not provided; not a pinned snapshot", true);
+      }
       row(metadata, "Content revision", data.contentRevision || "Not available", true);
       row(metadata, "Format fields", valueText(data.nativeFormat), true);
       detail.appendChild(metadata);
@@ -274,10 +335,11 @@
     page.appendChild(scope);
     if (data) page.appendChild(detail);
     body.replaceChildren(page);
-    if (hadFocus) (button.disabled ? page : sourceButton && state.sources ? sourceButton : button).focus();
+    if (hadFocus) (state.traceLoading ? cancel : tracing || button.disabled ? page : sourceButton && state.sources ? sourceButton : button).focus();
   }
 
   var styles = ".wi-inspector{padding:16px;overflow-wrap:anywhere}.wi-inspector *{box-sizing:border-box}" +
+    ".wi-trail{display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-top:10px}.wi-trail-step{min-height:40px;display:inline-flex;align-items:center;padding:6px 8px;border:1px solid var(--border-soft);border-radius:4px;background:transparent;color:var(--accent-text);font:inherit}.wi-trail-step[aria-current]{color:var(--muted)}button.wi-trail-step{cursor:pointer}.wi-trail-arrow{color:var(--muted)}.wi-origin{font-size:12px;line-height:1.5;border-left:2px solid var(--border-soft);padding-left:10px;color:var(--muted)}.wi-follow{display:block;min-height:40px;margin-top:8px;width:100%;white-space:normal}.wi-follow:disabled{opacity:.65;cursor:default}.wi-trace-cancel{min-height:40px;width:100%}.wi-trail-step:focus-visible{outline:2px solid var(--accent);outline-offset:2px}" +
     ".wi-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.wi-eyebrow{font-size:10px;letter-spacing:.09em;color:var(--muted);font-weight:600}.wi-readonly{font-size:11px;color:var(--muted)}" +
     ".wi-address{font-size:32px;line-height:1.15;font-weight:500;letter-spacing:-.04em;margin:10px 0 4px}.wi-sheet{margin:0 0 14px;color:var(--muted)}" +
     ".wi-inspect{min-height:40px;width:100%}.wi-inspect:disabled{opacity:.65;cursor:wait}.wi-description{color:var(--muted);font-size:12px;line-height:1.55;margin:10px 0 12px}" +
@@ -288,7 +350,8 @@
     ".wi-details summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.wi-scope .wi-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:6px 0}.wi-scope dt{margin:0}.wi-scope dd{font-size:12px;color:var(--muted)}" +
     ".wm-panel.wi-mode .wm-tab-actions,.wm-panel.wi-mode .wm-ctx,.wm-panel.wi-mode .wm-operator-warnings,.wm-panel.wi-mode .wm-thermo,.wm-panel.wi-mode .wm-preset{display:none!important}" +
     ".wm-panel.wi-mode{max-width:calc(100vw - 28px)}.wm-panel.wi-mode .wm-tab{min-height:40px}.wm-panel.wi-mode .wm-head .wm-x{min-height:32px;min-width:32px}.wm-panel.wi-mode .wm-reset-size,.wm-panel.wi-mode .wm-wide-toggle{display:none}";
-  var api = { selection: selection, key: key, matches: matches, valueText: valueText, formatText: formatText, render: render, styles: styles };
+  var api = { selection: selection, key: key, matches: matches, matchesSource: matchesSource, traceBlock: traceBlock,
+    valueText: valueText, formatText: formatText, render: render, styles: styles };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.WingmanInspector = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -293,6 +293,16 @@ def _named_table(spreadsheet_id, name, revision, token, ctx):
     raise ValueError("Sheet metadata incomplete")
 
 
+def table_properties(table_id, revision, token, ctx):
+    table = quote(_identity(table_id), safe="")
+    rev = _identity(revision)
+    props = wk._get(f"/content/tables/{table}/properties?{urlencode({'$revision': rev})}",
+                    token, ctx, version="2026-01-01")
+    if props["id"] != table_id or props["revision"] != rev:
+        raise ValueError("Table identity or revision mismatch")
+    return props
+
+
 def source_values(spreadsheet_id, table_id, revision, formula, links, token, ctx, *, linked_cell=None):
     """Opt-in direct evidence only: 100 cells across at most 10 range reads."""
     groups, used_cells, used_ranges = [], 0, 0
@@ -314,6 +324,9 @@ def source_values(spreadsheet_id, table_id, revision, formula, links, token, ctx
         if not reference:
             group["reason"] = candidate.get("reason", "Source range is unresolved; no values read.")
             continue
+        if "!" in reference and candidate["basis"] == "selected_revision" and not spreadsheet_id:
+            group["reason"] = "Source workbook identity is not established. Named-sheet references were not followed."
+            continue
         address = reference.rsplit("!", 1)[-1]
         try:
             bounds = _a1_bounds(address)
@@ -334,11 +347,7 @@ def source_values(spreadsheet_id, table_id, revision, formula, links, token, ctx
                 if name.startswith("'"):
                     name = name[1:-1].replace("''", "'")
                 group["tableId"] = _named_table(spreadsheet_id, name, rev, token, ctx)
-            table = quote(_identity(group["tableId"]), safe="")
-            props = wk._get(f"/content/tables/{table}/properties?{urlencode({'$revision': rev})}",
-                            token, ctx, version="2026-01-01")
-            if props["id"] != group["tableId"] or props["revision"] != rev:
-                raise ValueError("Table identity or revision mismatch")
+            props = table_properties(group["tableId"], rev, token, ctx)
             raw = read_cells(group["tableId"], bounds, token, ctx, rev)
             cells = []
             for ri, row in enumerate(raw["data"]):

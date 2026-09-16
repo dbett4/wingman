@@ -1142,6 +1142,7 @@
     connectionOpen = !connectionOpen;
     inspectRequest++;
     if (inspectState.loading) inspectState = {};
+    delete inspectState.traceLoading;
     syncTabUi();
     restoreTabView();
     if (connectionOpen) panelUi.body.querySelector('.wc-page').focus();
@@ -1185,7 +1186,60 @@
     if (open && !connectionOpen && activeTab === "inspect" && panelUi) paintInspection();
   }
   function paintInspection() {
-    WingmanInspector.render(panelUi.body, inspectContext || currentInspection(), inspectState, inspectSelectedCell);
+    WingmanInspector.render(panelUi.body, inspectContext || currentInspection(), inspectState, inspectSelectedCell,
+      followInspectionSource, returnInspection);
+  }
+  function returnInspection(depth) {
+    syncInspection();
+    inspectRequest++;
+    inspectState.trail = (inspectState.trail || []).slice(0, depth);
+    if (inspectState.traceLoading) inspectState.traceError = "Stopped waiting. The read may finish in the background; late evidence will be ignored.";
+    else delete inspectState.traceError;
+    delete inspectState.traceLoading;
+    paintInspection();
+  }
+  function followInspectionSource(target) {
+    if (!guardExtensionContext()) return;
+    syncInspection();
+    if (!inspectState.data || inspectState.traceLoading) return;
+    var trail = inspectState.trail || [];
+    var blocked = WingmanInspector.traceBlock(inspectState.data, trail, target);
+    if (blocked) { inspectState.traceError = blocked; paintInspection(); return; }
+    var request = ++inspectRequest;
+    inspectState.traceLoading = target;
+    delete inspectState.traceError;
+    paintInspection();
+    var query = ["tableId", "revision", "addr"].map(function (key) {
+      return key + "=" + encodeURIComponent(target[key]);
+    }).join("&");
+    function stillCurrent() {
+      syncInspection();
+      return !extensionInvalidated && open && !connectionOpen && activeTab === "inspect" && request === inspectRequest;
+    }
+    var timer = setTimeout(function () {
+      if (!stillCurrent()) return;
+      inspectRequest++;
+      delete inspectState.traceLoading;
+      inspectState.traceError = "Source read timed out. Earlier evidence is retained; a late reply will not replace it.";
+      paintInspection();
+    }, 30000);
+    svc("/api/inspect-source?" + query, { cache: "no-store" }).then(function (data) {
+      if (!stillCurrent()) return;
+      if (!WingmanInspector.matchesSource(target, data.target) || data.readOnly !== true || data.sourceValuesRequested !== true) {
+        throw new Error("Source scope mismatch");
+      }
+      if (!data.content || data.content.status !== "observed" || data.tableId !== target.tableId || data.contentRevision !== target.revision) {
+        throw new Error("Source unavailable at the recorded revision");
+      }
+      inspectState.trail = trail.concat([data]);
+      delete inspectState.traceLoading;
+      paintInspection();
+    }).catch(function () {
+      if (!stillCurrent()) return;
+      delete inspectState.traceLoading;
+      inspectState.traceError = "Could not verify this source at the requested revision. Earlier evidence is retained; no latest-revision substitute. You can retry or return.";
+      paintInspection();
+    }).finally(function () { clearTimeout(timer); });
   }
   function inspectSelectedCell(readSources) {
     readSources = readSources === true;
@@ -1224,9 +1278,10 @@
     connectionRequest++;
     connectionOpen = false;
     if (connectionState.loading) connectionState = {};
-    if (activeTab !== tabId && inspectState.loading) {
+    if (activeTab !== tabId) {
       inspectRequest++;
-      inspectState = {};
+      if (inspectState.loading) inspectState = {};
+      delete inspectState.traceLoading;
     }
     activeTab = tabId;
     syncTabUi();

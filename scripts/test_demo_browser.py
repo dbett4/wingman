@@ -153,7 +153,7 @@ def test_inspector_evidence_and_navigation(demo_url):
                 run("wait", "--fn", ready + f" && !!{root}.querySelector('.wi-values')")
                 check(f"{root}.activeElement.classList.contains('wi-read-sources')")
                 check(f"{root}.querySelector('.wi-sources').open")
-                check(f"Array.from({root}.querySelectorAll('.wi-values tbody tr')).map(e => e.textContent).join('|') === 'B32450000|B4875000|B5315000|B694000'")
+                check(f"Array.from({root}.querySelectorAll('.wi-values tbody tr')).map(e => e.querySelector('th').textContent + e.querySelector('code').textContent).join('|') === 'B32450000|B4875000|B5315000|B694000'")
                 check(f"{root}.querySelector('.wi-source-values').textContent.includes('demo-current-0')")
             elif addr == "B8":
                 check(f"{root}.querySelector('.wi-sources').textContent.includes('Not resolved#REF!')")
@@ -178,11 +178,11 @@ def test_inspector_evidence_and_navigation(demo_url):
         check(f"{root}.querySelectorAll('.wi-source-values').length === 2")
         check(f"{root}.querySelector('.wi-source-values').open && {root}.querySelector('.wi-source-values').textContent.includes('Source anchor revision: demo-published-3')")
         check(f"{root}.querySelector('.wi-selected-content').textContent === 'Selected B2 stored content: 2025'")
-        check(f"{root}.querySelector('[aria-label=\"Source cells in D6\"] tbody').textContent === 'D62024'")
+        check(f"{root}.querySelector('[aria-label=\"Source cells in D6\"] tbody th').textContent === 'D6' && {root}.querySelector('[aria-label=\"Source cells in D6\"] tbody code').textContent === '2024'")
         run("eval", f"{root}.querySelectorAll('.wi-source-values')[1].querySelector('summary').click()")
         check(f"{root}.querySelectorAll('.wi-source-values')[1].open && {root}.querySelectorAll('.wi-source-values')[1].textContent.includes('Published revision: demo-published-3')")
         check(f"{root}.querySelectorAll('[aria-label=\"Source cells in C5:D8\"] tbody tr').length === 8")
-        check(f"{root}.querySelector('[aria-label=\"Source cells in C5:D8\"] tbody tr:nth-child(4)').textContent === 'D62024'")
+        check(f"{root}.querySelector('[aria-label=\"Source cells in C5:D8\"] tbody tr:nth-child(4) th').textContent === 'D6' && {root}.querySelector('[aria-label=\"Source cells in C5:D8\"] tbody tr:nth-child(4) code').textContent === '2024'")
 
         # Nonblank destination content and covering range metadata cannot prove connection.
         run("click", '#grid [data-addr="B3"] button')
@@ -262,7 +262,7 @@ def test_inspector_evidence_and_navigation(demo_url):
         click(".wi-sources > summary")
         click(".wi-read-sources")
         run("eval", "sourceReply.values={status:'observed',groups:[{status:'observed',reference:'C11',range:'C11',tableId:'<img src=x>',revision:'revision-9',basis:'selected_revision',cells:[{addr:'C11',content:{status:'observed',kind:'formula',formula:'=SUM(C1:C10)'},calculated:{status:'observed',value:'-12340'}}]}]}; answer(pending.shift(),123,sourceReply)")
-        check(f"{root}.querySelector('.wi-values td').textContent === '=SUM(C1:C10)Formula result: -12340'")
+        check(f"{root}.querySelector('.wi-values td code').textContent === '=SUM(C1:C10)' && {root}.querySelector('.wi-source-result').textContent === 'Formula result: -12340'")
         check(f"!{root}.querySelector('.wi-source-values img')")
         click(".wi-read-sources")
         run("eval", "sourceReply.values.status='partial'; sourceReply.values.groups[0]={status:'unavailable',reference:'C11',tableId:'table',revision:'revision-9',basis:'selected_revision',reason:'Source unavailable; no latest-revision substitute.'}; answer(pending.shift(),123,sourceReply)")
@@ -353,6 +353,138 @@ def test_inspector_evidence_and_navigation(demo_url):
         run("wait", "--fn", f"{root}.querySelector('.wi-inspector').textContent.includes('Extension reloaded')")
         run("eval", "answer(pending.shift(), 999)")
         check(f"!{root}.querySelector('.wi-evidence') && !{root}.querySelector('.wi-inspect').disabled")
+        assert not run("errors").strip(), "Browser reported uncaught JavaScript errors"
+    finally:
+        run("close")
+
+
+def test_source_trail_and_return(demo_url, tmp_path):
+    executable = shutil.which("agent-browser")
+    assert executable, "Install agent-browser and Chromium first"
+    session = "wm-trail-" + uuid.uuid4().hex[:8]
+    root = "document.getElementById('__wk_wingman__').shadowRoot"
+
+    def run(*args):
+        result = subprocess.run([executable, "--session", session, *args], capture_output=True, text=True, timeout=45)
+        assert result.returncode == 0, result.stdout + result.stderr
+        return result.stdout
+
+    def check(expression):
+        run("eval", "(() => { if (!(" + expression + ")) throw new Error(" + repr(expression) + "); return true; })()")
+
+    def click(selector):
+        run("eval", f"{root}.querySelector({selector!r}).click()")
+
+    def at(addr):
+        run("wait", "--fn", f"{root}.querySelector('.wi-address')?.textContent === '{addr}' && !{root}.querySelector('.wi-trace-cancel')")
+
+    try:
+        run("open", demo_url)
+        run("set", "viewport", "1280", "1000", "2")
+        run("wait", "--fn", f"!!{root}.querySelector('.wi-inspect')")
+        run("find", "role", "button", "click", "--name", "Review notes", "--exact")
+        at("B2")
+        click(".wi-inspect")
+        run("wait", "--fn", f"!!{root}.querySelector('.wi-read-sources')")
+        click(".wi-read-sources")
+        run("wait", "--fn", f"!!{root}.querySelector('.wi-follow')")
+        # Exercise actual keyboard activation and resulting focus, not only DOM clicks.
+        run("eval", f"{root}.querySelector('.wi-follow').focus()")
+        run("press", "Enter")
+        at("D6")
+        check(f"{root}.activeElement.classList.contains('wi-inspector')")
+        check(f"{root}.querySelector('.wi-origin').textContent.includes('B2: 2025')")
+        check(f"{root}.querySelector('.wi-evidence dd').textContent === '2024'")
+        check(f"{root}.querySelector('.wi-follow').textContent === 'Inspect E11 source'")
+        check("document.getElementById('address').textContent === 'B2'")
+        click(".wi-follow")
+        at("E11")
+        check(f"{root}.querySelector('.wi-evidence dd').textContent === '=E12+1'")
+        check(f"{root}.querySelector('.wi-evidence .wi-row:nth-child(2) dd').textContent === '2023'")
+        check(f"{root}.querySelector('.wi-trail').textContent === 'Selected B2→D6→E11'")
+        for theme, width in [("light", 1280), ("dark", 390)]:
+            run("eval", f"document.getElementById('__wk_wingman__').setAttribute('data-theme', '{theme}'); {root}.querySelector('.wm-body').scrollTop=0")
+            run("set", "viewport", str(width), "1000", "2")
+            check("document.documentElement.scrollWidth <= innerWidth")
+            check(f"{root}.querySelector('.wi-inspector').scrollWidth <= {root}.querySelector('.wi-inspector').clientWidth")
+            check(f"[...{root}.querySelectorAll('.wi-follow, button.wi-trail-step, .wi-inspect')].every(b=>b.getBoundingClientRect().height>=40)")
+            run("screenshot", str(tmp_path / f"source-trail-{theme}.png"))
+            run("eval", f"{root}.querySelector('.wi-source-values').scrollIntoView({{block:'center'}})")
+            run("screenshot", str(tmp_path / f"source-trail-{theme}-evidence.png"))
+            run("eval", "window.scrollTo(0,0)")
+        click(".wi-follow")
+        at("E12")
+        check(f"{root}.querySelector('.wi-follow').disabled && {root}.querySelector('.wi-trace-block').textContent.startsWith('Already in this trail')")
+        run("eval", f"{root}.querySelector('.wi-trace-block').scrollIntoView({{block:'center'}})")
+        run("screenshot", str(tmp_path / "source-trail-cycle.png"))
+        run("eval", "window.beforeReturn = document.getElementById('request-count').textContent")
+        click(".wi-trail button:nth-of-type(2)")
+        at("D6")
+        check(f"{root}.querySelector('.wi-evidence dd').textContent === '2024'")
+        click(".wi-inspect")
+        at("B2")
+        check(f"{root}.querySelector('.wi-evidence dd').textContent === '2025' && !{root}.querySelector('.wi-trail')")
+        check("document.getElementById('request-count').textContent === beforeReturn && document.querySelectorAll('.trace-row').length === 0")
+
+        # Delay real source responses after HTTP completion. Cancellation, scope changes
+        # and response corruption test the controller; they are not live Workiva proof.
+        run("eval", """(() => {
+          const send=chrome.runtime.sendMessage; window.pending=[];
+          chrome.runtime.sendMessage=(msg,cb)=>send(msg, reply=>{
+            if(msg.path?.startsWith('/api/inspect-source?')) pending.push({cb,reply}); else cb(reply);
+          });
+          window.deliver=()=>{const p=pending.shift();p.cb(p.reply)};
+        })()""")
+        click(".wi-follow")
+        run("wait", "--fn", "pending.length===1")
+        run("eval", f"{root}.querySelector('.wi-trace-status').scrollIntoView({{block:'center'}})")
+        run("screenshot", str(tmp_path / "source-trail-loading.png"))
+        click(".wi-trace-cancel")
+        run("eval", "deliver()")
+        at("B2")
+        check(f"!{root}.querySelector('.wi-trail') && {root}.querySelector('.wi-trace-status').textContent.includes('Stopped waiting')")
+        for corruption in ["pending[0].reply.data.target.revision='newer'",
+                           "pending[0].reply.data.contentRevision='newer'",
+                           "delete pending[0].reply.data.content",
+                           "pending[0].reply={ok:false,status:403,error:'sensitive body'}"]:
+            click(".wi-follow")
+            run("wait", "--fn", "pending.length===1")
+            run("eval", corruption + "; deliver()")
+            at("B2")
+            check(f"{root}.querySelector('.wi-evidence dd').textContent==='2025' && {root}.querySelector('.wi-trace-status').textContent.includes('Could not verify')")
+            check(f"!{root}.textContent.includes('sensitive body')")
+        run("eval", f"{root}.querySelector('.wi-trace-status').scrollIntoView({{block:'center'}})")
+        run("screenshot", str(tmp_path / "source-trail-unavailable.png"))
+        click(".wi-follow")
+        run("wait", "--fn", "pending.length===1")
+        run("eval", "deliver()")
+        at("D6")
+        click(".wi-follow")
+        run("wait", "--fn", "pending.length===1")
+        click(".wi-trail button")
+        run("eval", "deliver()")
+        at("B2")
+        check(f"!{root}.querySelector('.wi-trail')")
+        click(".wi-follow")
+        run("wait", "--fn", "pending.length===1")
+        click("[data-tab=scan]")
+        run("eval", "deliver()")
+        click("[data-tab=inspect]")
+        at("B2")
+        check(f"!{root}.querySelector('.wi-trail')")
+        # Run the deadline callback deterministically, retaining the real delayed read.
+        run("eval", "const oldTimer=window.setTimeout; window.setTimeout=(fn,ms,...args)=>{if(ms===30000)window.expireSource=fn; return oldTimer(fn,ms,...args)}")
+        click(".wi-follow")
+        run("wait", "--fn", "pending.length===1")
+        run("eval", "expireSource(); deliver(); window.setTimeout=oldTimer")
+        at("B2")
+        check(f"!{root}.querySelector('.wi-trail') && {root}.querySelector('.wi-trace-status').textContent.includes('timed out')")
+        click(".wi-follow")
+        run("wait", "--fn", "pending.length===1")
+        run("click", '#grid [data-addr="B3"] button')
+        at("B3")
+        run("eval", "deliver()")
+        check(f"!{root}.querySelector('.wi-trail') && !{root}.querySelector('.wi-evidence')")
         assert not run("errors").strip(), "Browser reported uncaught JavaScript errors"
     finally:
         run("close")

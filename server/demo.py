@@ -118,7 +118,7 @@ class Workbook:
                 if (path == f"/content/tables/{anchor['content']['table']}/anchors/{anchor['id']}"
                         and query.get("$revision") == [anchor["revision"]]):
                     return copy.deepcopy(anchor)
-        content = re.fullmatch(r"/content/tables/(de0[12]|demo-notes-table)/(cells|rangeLinks|properties)", path)
+        content = re.fullmatch(r"/content/tables/(de0[12]|demo-notes-table|demo-year-support)/(cells|rangeLinks|properties)", path)
         if method == "GET" and content:
             published = FIXTURE["publishedTables"].get(content[1])
             sheet = published or self.sheet(content[1])
@@ -139,10 +139,9 @@ class Workbook:
                         if pr < 0 or pc < 0:
                             raise ValueError("Outside published range")
                         value = sheet["rows"][pr][pc]
-                        formula = None
                     else:
                         value = sheet["cells"][ri][ci]["value"]
-                        formula = sheet["formulas"].get(wk.a1(ri, ci))
+                    formula = sheet.get("formulas", {}).get(wk.a1(ri, ci))
                     link_ref = sheet.get("cellLinks", {}).get(wk.a1(ri, ci))
                     row.append({"rawValue": formula or str(value), "value": {
                         "type": "formula", "formula": {"calculatedValue": str(value), "effectiveValue": str(value)}}
@@ -256,7 +255,7 @@ ASSETS = {"/": "demo/index.html", "/demo/demo.css": "demo/demo.css", "/demo/demo
           "/wingman-connection.js": "extension/wingman-connection.js",
           "/wingman-core.js": "extension/wingman-core.js", "/wingman-panel.js": "extension/wingman-panel.js",
           "/icons/icon128.png": "extension/icons/icon128.png"}
-GET_ROUTES = {"/config", "/api/inspect", "/api/queue", "/api/review-packet"}
+GET_ROUTES = {"/config", "/api/inspect", "/api/inspect-source", "/api/queue", "/api/review-packet"}
 POST_ROUTES = {"/fix", "/apply", "/demo/reset", "/demo/failure"}
 
 

@@ -298,3 +298,54 @@ def test_changed_link_identity_discards_trace_even_when_content_is_unchanged(tra
     data = inspect()
     assert data["status"] == "changed" and "content" not in data
     assert "cellLink" not in data["source"]
+
+
+def test_http_two_step_source_chain_is_on_demand_and_revision_bound(browser):
+    before = browser.state()
+    first = browser.request("/api/inspect-source?tableId=demo-notes-table&revision=demo-published-3&addr=D6")
+    assert first["target"] == {"tableId": "demo-notes-table", "revision": "demo-published-3", "addr": "D6"}
+    assert first["status"] == "partial" and first["content"]["value"] == "2024"
+    assert first["source"]["rangeLinks"]["status"] == first["nativeFormat"]["status"] == "not_inspected"
+    group = first["source"]["values"]["groups"][0]
+    assert (group["tableId"], group["revision"], group["range"]) == ("demo-year-support", "demo-support-2", "E11")
+    assert group["cells"][0]["content"]["formula"] == "=E12+1"
+    assert group["cells"][0]["calculated"]["value"] == "2023"
+    assert browser.state()["requestCount"] - before["requestCount"] == 6  # No recursive expansion.
+    second = browser.request("/api/inspect-source?tableId=demo-year-support&revision=demo-support-2&addr=E11")
+    assert second["content"]["formula"] == "=E12+1"
+    assert second["calculated"]["value"] == "2023"
+    assert second["source"]["values"]["groups"][0]["cells"][0]["addr"] == "E12"
+    assert browser.state()["requestCount"] - before["requestCount"] == 10
+    assert browser.state()["sheets"] == before["sheets"] and browser.state()["events"] == []
+
+
+@pytest.mark.parametrize("fault", [None, "denied", "properties-id", "properties-revision", "cell-revision", "bounds", "incomplete"])
+def test_historical_source_never_substitutes_latest_or_another_table(monkeypatch, fault):
+    calls = []
+
+    def read(path, token, ctx, version=None):
+        calls.append(path)
+        assert version == "2026-01-01"
+        query = parse_qs(urlsplit(path).query)
+        assert query["$revision"] == ["old/rev+7"]
+        assert path.startswith("/content/tables/source%2Ftable/")
+        if fault == "denied":
+            raise PermissionError("sensitive body")
+        if "/properties?" in path:
+            return {"id": "other" if fault == "properties-id" else "source/table",
+                    "revision": "latest" if fault == "properties-revision" else "old/rev+7"}
+        assert query == {"$revision": ["old/rev+7"], "startRow": ["11"], "stopRow": ["11"], "startColumn": ["2"], "stopColumn": ["2"]}
+        return {"revision": "latest" if fault == "cell-revision" else "old/rev+7",
+                "range": {"startRow": 12 if fault == "bounds" else 11, "stopRow": 11, "startColumn": 2, "stopColumn": 2},
+                "data": [] if fault == "incomplete" else [{"cells": [{"value": False}]}]}
+
+    monkeypatch.setattr(inspector.wk, "_get", read)
+    monkeypatch.setattr(inspector.wk, "_get_url", read)
+    data = inspector.inspect_source("source/table", "old/rev+7", "C12", "synthetic", None)
+    if fault:
+        assert data["status"] == "unavailable" and "content" not in data and "source" not in data
+    else:
+        assert data["content"] == {"status": "observed", "kind": "boolean", "value": False, "formula": None}
+        assert data["source"]["values"]["groups"] == []
+    assert len(calls) == (1 if fault in ("denied", "properties-id", "properties-revision") else 2)
+    assert "sensitive" not in json.dumps(data)

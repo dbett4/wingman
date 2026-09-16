@@ -1,4 +1,4 @@
-"""Installed MV3 connection test: real worker + HTTP handler, fictional page/config only.
+"""Installed MV3 connection/source tests: real worker + HTTP handler, fictional data only.
 
 Requires Python Playwright and its Chromium, and a FREE loopback port 8770.
 Run separately from a running Wingman service. Never reads .env or local-config.js.
@@ -212,6 +212,61 @@ def test_installed_connection(tmp_path, monkeypatch, token):
                 # Same running service recovers after loss; no extension reload needed.
                 page.locator(".wc-check").click()
                 expect(title).to_have_text("Workiva setup incomplete")
+                assert all(path in ("/version", "/api/connection") and paired for path, paired in requests)
+                assert not upstream_calls
+                requests.clear()
+
+                # Real installed content script, worker and handler. Only the Workiva
+                # transport is replaced with the same fictional fixture as the demo.
+                # In particular, this does not use the demo's Chrome messaging adapter.
+                from demo import Workbook
+                book = Workbook()
+
+                def fictional_read(path, _token, _ctx, version=None):
+                    return book.request("GET", path, None)
+
+                with monkeypatch.context() as source_patch:
+                    source_patch.setattr(app, "_token", lambda: "fictional-inspection-token")
+                    source_patch.setattr(app.inspector.wk, "_get", fictional_read)
+                    source_patch.setattr(app.inspector.wk, "_get_url", fictional_read)
+                    page_url = page_url.replace("abc123", "de00").replace("def456", "de02")
+                    page.goto(page_url)
+                    page.locator(".wm-pill").click()
+                    page.locator(".wi-inspect").click()
+                    expect(page.locator(".wi-evidence dd").first).to_have_text("2025")
+                    page.locator(".wi-sources > summary").click()
+                    page.locator(".wi-read-sources").click()
+                    page.locator(".wi-follow").first.click()
+                    expect(page.locator(".wi-address")).to_have_text("D6")
+                    expect(page.locator(".wi-evidence dd").first).to_have_text("2024")
+                    page.locator(".wi-follow").first.click()
+                    expect(page.locator(".wi-address")).to_have_text("E11")
+                    expect(page.locator(".wi-evidence dd").first).to_have_text("=E12+1")
+                    expect(page.locator(".wi-origin")).to_contain_text("B2: 2025")
+                    expect(page.locator(".wi-trail")).to_have_text("Selected B2→D6→E11")
+                    expect(page.locator(".dt-formula-cell-indicator")).to_have_text("B2")
+                    page.locator(".wm-body").evaluate("e=>e.scrollTop=0")
+                    capture("installed-source-trail")
+                    page.locator(".wm-panel").screenshot(path=str(tmp_path / "source-trail-panel.png"))
+                    page.set_viewport_size({"width": 390, "height": 844})
+                    page.locator(".wi-follow").scroll_into_view_if_needed()
+                    capture("installed-source-narrow-evidence")
+                    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+                    assert page.locator(".wi-inspector").evaluate("e=>e.scrollWidth<=e.clientWidth")
+                    assert page.locator(".wi-follow,button.wi-trail-step,.wi-inspect").evaluate_all(
+                        "els=>els.every(e=>e.getBoundingClientRect().height>=40)")
+                    before_return = book.request_count
+                    page.locator(".wi-inspect").click()
+                    expect(page.locator(".wi-address")).to_have_text("B2")
+                    expect(page.locator(".wi-evidence dd").first).to_have_text("2025")
+                    assert book.request_count == before_return == 32
+                    assert book.events == []
+                    assert all(paired and (path == "/version" or path.startswith(("/api/inspect?", "/api/inspect-source?")))
+                               for path, paired in requests)
+                    assert sum(path.startswith("/api/inspect-source?") for path, _ in requests) == 2
+                requests.clear()
+                page.set_viewport_size({"width": 1280, "height": 900})
+                page.locator(".wc-toggle").click()
                 server.shutdown()
                 server.server_close()
                 page.locator(".wc-check").click()
