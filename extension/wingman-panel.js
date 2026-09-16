@@ -1258,7 +1258,9 @@
       return key + "=" + encodeURIComponent(target[key]);
     }).join("&");
     // Candidate only: the server must prove ownership at the source revision.
-    if (inspectContext.target && inspectContext.target.spreadsheetId) query += "&workbookHint=" + encodeURIComponent(inspectContext.target.spreadsheetId);
+    var workbookHint = inspectState.chosen ? inspectState.chosen.workbookHint
+      : inspectContext.target && inspectContext.target.spreadsheetId;
+    if (workbookHint) query += "&workbookHint=" + encodeURIComponent(workbookHint);
     function stillCurrent() {
       syncInspection();
       return !extensionInvalidated && open && !connectionOpen && activeTab === "inspect" && request === inspectRequest;

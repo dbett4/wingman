@@ -31,6 +31,15 @@
   function matchesSource(target, reply) {
     return !!reply && ["tableId", "revision", "addr"].every(function (k) { return target[k] === reply[k]; });
   }
+  function sourceWorkbookHint(href, candidate) {
+    var page, url;
+    try { page = new URL(href); url = new URL(candidate); } catch (_) { return null; }
+    var report = selection(href).document, source = selection(candidate, "A1").target;
+    if (!report || !source || page.origin !== url.origin || report.workspaceId !== source.workspaceId ||
+        page.username || page.password || page.port || url.username || url.password || url.port ||
+        !/^[A-Za-z0-9_-]{1,128}$/.test(source.spreadsheetId)) return null;
+    return source.spreadsheetId;
+  }
   function sourceSheetUrl(href, data) {
     var url;
     try { url = new URL(href); } catch (_) { return null; }
@@ -118,10 +127,27 @@
           input.pattern = "[A-Za-z]{1,3}[1-9][0-9]{0,6}"; input.maxLength = 10;
           input.autocomplete = "off"; input.spellcheck = false;
           cellLabel.appendChild(input); form.appendChild(cellLabel);
+          var companion = el("details", "wi-details");
+          companion.appendChild(el("summary", null, "Locate source sheets (optional)"));
+          var workbookLabel = el("label", null, "Companion workbook URL"), workbook = el("input");
+          workbook.type = "url"; workbook.autocomplete = "off"; workbook.spellcheck = false; workbook.maxLength = 2048;
+          workbook.placeholder = "Paste a Workiva spreadsheet URL";
+          workbook.oninput = function () { workbook.setCustomValidity(""); };
+          workbook.oninvalid = function () { companion.open = true; };
+          workbookLabel.appendChild(workbook); companion.appendChild(workbookLabel);
+          companion.appendChild(el("p", "wi-description", "Use a current sheet URL from this workspace. Wingman verifies source-table membership at the recorded revision before offering a sheet link."));
+          form.appendChild(companion);
           var submit = el("button", "wm-btn primary", "Inspect cell & direct sources"); submit.type = "submit"; form.appendChild(submit);
           form.onsubmit = function (event) {
             event.preventDefault();
-            documentActions.choose({tableId: select.value, revision: catalog.revision, addr: input.value.toUpperCase()});
+            var hint = sourceWorkbookHint(root.location.href, workbook.value);
+            if (workbook.value.trim() && !hint) {
+              companion.open = true;
+              workbook.setCustomValidity("Use a current Workiva sheet URL on the same site and in the same workspace as this report.");
+              workbook.reportValidity();
+              return;
+            }
+            documentActions.choose({tableId: select.value, revision: catalog.revision, addr: input.value.toUpperCase(), workbookHint: hint});
           };
           page.appendChild(form);
         }
@@ -453,7 +479,7 @@
     ".wm-panel.wi-mode .wm-tab-actions,.wm-panel.wi-mode .wm-ctx,.wm-panel.wi-mode .wm-operator-warnings,.wm-panel.wi-mode .wm-thermo,.wm-panel.wi-mode .wm-preset{display:none!important}" +
     ".wm-panel.wi-mode{max-width:calc(100vw - 28px)}.wm-panel.wi-mode .wm-tab{min-height:40px}.wm-panel.wi-mode .wm-head .wm-x{min-height:32px;min-width:32px}.wm-panel.wi-mode .wm-reset-size,.wm-panel.wi-mode .wm-wide-toggle{display:none}";
   var api = { selection: selection, key: key, matches: matches, matchesSource: matchesSource, traceBlock: traceBlock,
-    sourceSheetUrl: sourceSheetUrl, valueText: valueText, formatText: formatText, render: render, styles: styles };
+    sourceWorkbookHint: sourceWorkbookHint, sourceSheetUrl: sourceSheetUrl, valueText: valueText, formatText: formatText, render: render, styles: styles };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.WingmanInspector = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

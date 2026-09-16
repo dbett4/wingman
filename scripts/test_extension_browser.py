@@ -2,6 +2,8 @@
 
 Requires Python Playwright and its Chromium, and a FREE loopback port 8770.
 Run separately from a running Wingman service. Never reads .env or local-config.js.
+Do not edit extension/ (including docs) during the run: the real /version watcher
+fingerprints that directory and will reload the installed worker mid-request.
 """
 from http.server import ThreadingHTTPServer
 import json
@@ -11,6 +13,7 @@ import shutil
 import sys
 import threading
 import time
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from playwright.sync_api import expect, sync_playwright
@@ -89,6 +92,7 @@ def test_installed_connection(tmp_path, monkeypatch, token):
             try:
                 page_url = "https://app.wdesk.com/a/fictional-workspace/spreadsheet/abc123/-1/sheet/def456"
                 source_page_url = "https://app.wdesk.com/a/fictional-workspace/spreadsheet/de00/-1/sheet/de02"
+                companion_page_url = source_page_url.replace("de00", "companion-book")
 
                 def route_request(route):
                     if route.request.url == page_url:
@@ -98,7 +102,7 @@ def test_installed_connection(tmp_path, monkeypatch, token):
                             <p>Selected cell:</p><div class="dt-formula-cell-indicator">B2</div>
                             <table border="1" cellpadding="16"><tr><th>Label</th><th>Fiscal year</th></tr>
                             <tr><td>Report period</td><td>2025</td></tr></table></body></html>""")
-                    elif route.request.url == source_page_url:
+                    elif route.request.url in (source_page_url, companion_page_url):
                         route.fulfill(content_type="text/html", body="""<!doctype html><html lang="en">
                             <title>Fictional source sheet</title><h1>Review notes</h1>
                             <p>Fictional current sheet. Not the recorded source revision.</p></html>""")
@@ -245,9 +249,19 @@ def test_installed_connection(tmp_path, monkeypatch, token):
                 # In particular, this does not use the demo's Chrome messaging adapter.
                 from demo import Workbook
                 book = Workbook()
+                locate_document_source = False
 
                 def fictional_read(path, _token, _ctx, version=None):
-                    return book.request("GET", path, None)
+                    url = urlsplit(path)
+                    if locate_document_source and url.path == "/spreadsheets/companion-book/sheets/de02":
+                        assert parse_qs(url.query)["$revision"] == ["demo-published-3"]
+                        book.request_count += 1
+                        return {"id": "de02", "name": "Published reporting notes", "revision": "demo-published-3",
+                                "table": {"table": "demo-notes-table", "revision": "demo-published-3"}}
+                    reply = book.request("GET", path, None)
+                    if locate_document_source and url.path == "/content/tables/demo-notes-table/properties":
+                        reply["sheet"] = "de02"
+                    return reply
 
                 with monkeypatch.context() as source_patch:
                     source_patch.setattr(app, "_token", lambda: "fictional-inspection-token")
@@ -381,8 +395,28 @@ def test_installed_connection(tmp_path, monkeypatch, token):
                     assert page.locator(".wi-doc-table option").all_text_contents() == ["Choose a table", "1. Reporting period"]
                     page.get_by_role("combobox", name="Table", exact=True).select_option("demo-report-table")
                     page.get_by_label("Cell address", exact=True).fill("b2")
+                    if page.locator("#__wk_wingman__").get_attribute("data-theme") != "light":
+                        page.locator('[title^="Theme:"]').click()
+                    expect(page.locator(".wm-panel")).to_have_css("background-color", "rgb(255, 255, 255)")
                     page.locator(".wm-panel").screenshot(path=str(tmp_path / "document-choice-light.png"))
+                    page.get_by_text("Locate source sheets (optional)", exact=True).click()
+                    companion = page.get_by_label("Companion workbook URL", exact=True)
+                    before_invalid = book.request_count
+                    for invalid in [companion_page_url.replace("fictional-workspace", "foreign-workspace"),
+                                    companion_page_url.replace("app.wdesk.com", "evil.invalid"),
+                                    companion_page_url.replace("/-1/", "/42/")]:
+                        companion.fill(invalid)
+                        companion.press("Enter")
+                        assert companion.evaluate("e=>e.validationMessage").startswith("Use a current Workiva sheet URL")
+                        expect(companion).to_be_focused()
+                        assert book.request_count == before_invalid
+                        assert not any(path.startswith("/api/inspect-document?") for path, _ in requests)
+                    companion.fill(companion_page_url + "?discard=1#discard")
+                    assert companion.evaluate("e=>e.checkValidity()")
+                    page.get_by_role("button", name="Inspect cell & direct sources", exact=True).scroll_into_view_if_needed()
+                    page.locator(".wm-panel").screenshot(path=str(tmp_path / "document-companion-light.png"))
                     page.locator('[title^="Theme:"]').click()
+                    expect(page.locator(".wm-panel")).to_have_css("background-color", "rgb(42, 42, 46)")
                     page.locator(".wm-panel").screenshot(path=str(tmp_path / "document-choice-dark.png"))
                     page.set_viewport_size({"width": 390, "height": 844})
                     page.get_by_role("button", name="Inspect cell & direct sources", exact=True).scroll_into_view_if_needed()
@@ -390,6 +424,7 @@ def test_installed_connection(tmp_path, monkeypatch, token):
                     assert page.locator(".wi-inspector").evaluate("e=>e.scrollWidth<=e.clientWidth")
                     assert page.locator(".wi-doc-form input,.wi-doc-form select,.wi-doc-form button,.wi-doc-load").evaluate_all(
                         "els=>els.every(e=>e.getBoundingClientRect().height>=40)")
+                    page.get_by_text("Locate source sheets (optional)", exact=True).click()
                     page.get_by_text("Context & revision", exact=True).click()
                     expect(page.locator(".wi-evidence")).to_contain_text("demo-report-5")
                     page.locator(".wi-evidence").scroll_into_view_if_needed()
@@ -400,8 +435,14 @@ def test_installed_connection(tmp_path, monkeypatch, token):
                     expect(page.locator(".wi-inspector")).to_contain_text("Explicit table-cell choice")
                     page.locator(".wi-follow").first.click()
                     expect(page.locator(".wi-address")).to_have_text("D6")
+                    expect(page.locator(".wi-open-source")).to_have_count(0)  # A candidate is not proof.
                     page.locator(".wi-follow").first.click()
                     expect(page.locator(".wi-address")).to_have_text("E11")
+                    expect(page.locator(".wi-open-source")).to_have_count(0)
+                    source_requests = [path for path, _ in requests if path.startswith("/api/inspect-source?")]
+                    assert len(source_requests) == 2
+                    assert all(parse_qs(urlsplit(path).query)["workbookHint"] == ["companion-book"] for path in source_requests)
+                    assert all("discard" not in path for path in source_requests)
                     expect(page.locator(".wi-trail")).to_have_text("Chosen B2→D6→E11")
                     page.set_viewport_size({"width": 1280, "height": 900})
                     page.locator(".wm-body").evaluate("e=>e.scrollTop=0")
@@ -417,6 +458,36 @@ def test_installed_connection(tmp_path, monkeypatch, token):
                     assert book.request_count == before_return
                     assert all(paired and (path == "/version" or path.startswith((
                         "/api/document-tables?", "/api/inspect-document?", "/api/inspect-source?"))) for path, paired in requests)
+
+                    # Only revision-matched backend metadata can turn that candidate
+                    # into a native link. Rereading preserves the explicit hint.
+                    locate_document_source = True
+                    page.locator(".wi-inspect").click()
+                    expect(page.locator(".wi-evidence dd").first).to_have_text("2025")
+                    page.locator(".wi-follow").first.click()
+                    expect(page.locator(".wi-address")).to_have_text("D6")
+                    source_link = page.get_by_role("link", name="Open source sheet ↗", exact=True)
+                    expect(source_link).to_have_attribute("href", companion_page_url)
+                    page.locator("#wi-open-source-note").scroll_into_view_if_needed()
+                    source_link.focus()
+                    page.keyboard.press("Tab")
+                    page.keyboard.press("Shift+Tab")
+                    expect(source_link).to_be_focused()
+                    page.locator(".wm-panel").screenshot(path=str(tmp_path / "document-companion-verified.png"))
+                    before_open = book.request_count
+                    with context.expect_page() as opened:
+                        page.keyboard.press("Enter")
+                    native = opened.value
+                    expect(native).to_have_url(companion_page_url)
+                    expect(native).to_have_title("Fictional source sheet")
+                    assert native.evaluate("window.opener === null")
+                    native.close()
+                    page.bring_to_front()
+                    expect(page.locator(".wi-trail")).to_have_text("Chosen B2→D6")
+                    page.locator(".wi-inspect").click()
+                    expect(page.locator(".wi-evidence dd").first).to_have_text("2025")
+                    assert book.request_count == before_open and book.events == []
+                    locate_document_source = False
 
                     # Exercise the real content-script timer, not a substituted clock.
                     document_delay.set()
@@ -441,6 +512,7 @@ def test_installed_connection(tmp_path, monkeypatch, token):
                     expect(page.locator(".wi-inspect")).to_have_text("Reading cell…")
                     page.locator(".wi-doc-change").click()
                     expect(page.locator(".wi-doc-form")).to_be_visible()
+                    expect(page.get_by_label("Companion workbook URL", exact=True)).to_have_value("")
                     document_released.set()
                     assert document_sent.wait(10)
                     document_delay.clear()

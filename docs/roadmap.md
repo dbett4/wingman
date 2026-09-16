@@ -62,9 +62,12 @@ first installation, through Extension options and as the toolbar's no-panel fall
 The real setup button and a developer-assisted options-context request exercised
 the installed MV3 broker, SSH forward, service and old RCTC cell read; a malformed
 Apply request was refused. The rendered setup page was inspected. The Mac Workiva
-session is signed out, so the installed **in-page** journey still needs verification.
-The authenticated VPS browser confirmed the selected document in LSL Sandbox; its
-session was not copied to the Mac. Clean-machine onboarding remains untested.
+session is signed out; its in-page journey remains untested. With the owner's
+separate temporary-install approval, the authenticated VPS browser then exercised
+the actual content script on the old RCTC report: table choice, D12 inspection,
+following J18 and returning all passed. The temporary extension and pairing copy
+were removed afterward; no browser/service restart or session transfer was needed.
+Clean-machine onboarding remains untested.
 [Private installation](../extension/PACKAGING.md) and
 [deployment controls and rollback](../deploy/README.md).
 
@@ -104,26 +107,37 @@ MV3 worker/handler; return performs no new reads or writes. Wrong revisions,
 missing evidence, cancellation, timeout and stale replies have regression coverage.
 Historical views deliberately omit native format, range-link listings and
 named-sheet resolution when the source workbook identity is unknown. This is
-in-panel evidence navigation, not movement across Workiva sheets or documents.
-General cross-workbook resolution, cross-sheet navigation, the linked document-table
-in-page journey and new-reviewer acceptance remain open.
+revision-bound evidence navigation; opening a native sheet is a separate action.
+General cross-workbook discovery, automatic native cell selection and new-reviewer
+acceptance remain open.
 
-The next local candidate adds **Open source sheet** for a location whose sheet/table
+The local candidate adds **Open source sheet** for a location whose sheet/table
 membership matches the recorded revision. It opens today's sheet in a separate tab,
 not the historical cell; values and the return trail remain in the original tab.
 The actual installed MV3 test exercised a cross-sheet formula reference, keyboard
 opening, no opener access, and return without new API reads or writes against
 fictional pages. Missing/mismatched locations have no link. Light/dark and 390px
 renders were inspected; source values precede navigation and keyboard focus is visible.
-This candidate is not deployed. The Mac sign-in is not a development prerequisite:
-the canonical VPS auth router returned `UI_READY`, and a subsequent serialized
-browser check opened both the approved old RCTC report and its companion's
-Stmt Activities FY25 sheet. Exact URLs/titles and inspected native screenshots
-confirmed the targets in LSL Sandbox. No Wingman installation was listed in that
-VPS profile and no panel appeared, so this proves native access, not the installed
-extension journey. Adding and pairing Wingman in the shared VPS browser requires
-separate installation approval. Cell selection, general workbook discovery and
-live extension acceptance remain open.
+The owner subsequently approved a temporary VPS Chrome installation. The real
+Workiva report offered two Statement of Activities tables; the chosen original
+table's D12 returned 0, then J18 returned the retained SUMIFS formula and calculated
+0 at its recorded revision. Return restored D12 without additional observed API
+requests or changing the report URL. The extension was unloaded, its temporary
+package/pairing copy removed and its own tabs closed. The browser and backend
+services were not restarted. This proves the bounded live in-page journey, not
+accounting accuracy or new-reviewer acceptance. Mac sign-in is not a VPS prerequisite.
+
+That trial exposed a missing path: a report-origin source request had no workbook
+candidate, so it correctly offered no native sheet link. The next local improvement
+adds an optional **Companion workbook URL** beneath **Locate source sheets** in the
+table chooser. Only a current sheet URL on the report's site and in its workspace
+is accepted; only the workbook ID is sent, on an explicit source-follow request.
+The backend still must prove source-table membership at the recorded revision.
+The candidate survives rereads but clears on a new choice or context. Installed
+fictional tests cover wrong site/workspace/history without a read, unverified
+membership without a link, verified membership with keyboard opening and return,
+and 390px/light/dark layouts. This improvement is not installed in the owner's Mac
+or shared VPS browser and has not yet passed the live RCTC companion-navigation trial.
 
 The September 16 private activation used the owner-selected older RCTC sandbox pair,
 not an audit client. The installed Mac broker read the Statement of Activities table
@@ -178,8 +192,9 @@ change is unknown; historical source-anchor lookup still failed without fallback
 Fictional installed tests cover table choice, keyboard submit, two-step source return,
 empty/unavailable sections, real 30-second timeouts, cancellation and late replies
 after a section change. Light/dark, 390px, error and scrolled evidence states were
-inspected. Native selection/navigation, general cross-workbook resolution and the
-installed in-page journey remain open. The later RCTC activation is recorded above.
+inspected. Automatic native cell selection, general cross-workbook discovery and the
+new-reviewer journey remain open. The later bounded RCTC in-page trial is recorded
+above; it does not establish automatic native cell selection.
 
 - Support the complete review journey across spreadsheet cells and linked document
   tables: inspect a value, see the supported source/destination relationship,

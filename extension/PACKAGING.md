@@ -73,10 +73,34 @@ and return journey remains unverified there. The authenticated VPS browser confi
 the old file in LSL Sandbox without transferring its session. No Workiva edits
 were made; both selected files retained their August 8 modification timestamps.
 
+With separate temporary-install approval, the authenticated VPS Chrome 149 browser
+then exercised Wingman on that actual old RCTC document: explicit table/D12 choice,
+J18 source formula and calculated value, then return to D12 without additional
+observed API requests. The temporary extension, pairing copy and owned tabs were
+removed; neither browser nor backend was restarted. This is bounded in-page proof,
+not clean-machine onboarding or complete product acceptance. No Mac login is needed
+for this VPS test route.
+
 The earlier Chrome 149 automated-load failure was an observation from one spike;
 its alleged universal content-script suppression was not established. Disposable
 installed-extension tests now exercise the real worker and content scripts against
 a fictional page. They do not establish compatibility with live Workiva.
+
+## Report-to-source navigation in the next local candidate
+
+This improvement is tested locally but not yet installed in the owner's browsers.
+In a current report section, choose **Read section tables**, select a table and enter
+one A1 cell address. To help locate a linked source sheet, expand **Locate source
+sheets (optional)** and paste a current sheet URL from the companion workbook on
+the same Workiva site and in the same workspace. Leaving it blank still permits
+table-cell inspection and source tracing.
+
+Choose **Inspect cell & direct sources**, then the desired **Inspect … source**
+action. A pasted workbook URL is only a candidate: **Open source sheet** appears
+only after the backend verifies membership at the source's recorded revision.
+It opens today's sheet in a separate tab, not the historical cell; values may
+differ. Return to the original tab to keep the evidence trail, then use **Return
+to chosen cell**. Choosing another cell or changing context clears the candidate.
 
 ## Permissions and data boundaries
 

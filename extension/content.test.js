@@ -99,6 +99,22 @@ function eq(label, got, want) {
   }
   eq("spreadsheet evidence cannot match document choice", wi.matches(chosen, target), false);
 
+  eq("companion candidate extracts only workbook ID", wi.sourceWorkbookHint(docUrl, href + "?ignored=1#discard"), "book-b");
+  eq("current companion route accepted", wi.sourceWorkbookHint(docUrl, href.replace("/sheet/", "/-1/sheet/")), "book-b");
+  eq("regional companion accepted on same site", wi.sourceWorkbookHint(docUrl.replace("app.wdesk", "eu.wdesk"),
+    href.replace("app.wdesk", "eu.wdesk")), "book-b");
+  for (const invalid of ["", "book-b", docUrl, href.replace("workspace-a", "workspace-b"),
+    href.replace("app.wdesk", "eu.wdesk"), href.replace("wdesk.com", "wdesk.com.evil.invalid"),
+    href.replace("https:", "http:"), href.replace("/sheet/", "/42/sheet/"),
+    href.replace("app.wdesk.com", "user:pass@app.wdesk.com"), href.replace("app.wdesk.com", "app.wdesk.com:8443"),
+    href.replace("/a/workspace-a", ""), href.replace("book-b", "b".repeat(129))]) {
+    eq("companion refuses unsupported candidate " + invalid, wi.sourceWorkbookHint(docUrl, invalid), null);
+  }
+  for (const invalid of ["bad URL", href, docUrl.replace("/-1/", "/42/"),
+    docUrl.replace("app.wdesk.com", "user:pass@app.wdesk.com")]) {
+    eq("companion requires current report context " + invalid, wi.sourceWorkbookHint(invalid, href), null);
+  }
+
   const located = { target: source, contentRevision: "rev-3", location: {
     status: "observed", spreadsheetId: "book-source", sheetId: "sheet-source", revision: "rev-3",
   } };
