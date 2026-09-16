@@ -47,22 +47,29 @@ loss, timeout and late replies. The owner approved private commissioning on Sept
 15: a read-only service now runs on the authoritative VPS and the Mac runs only an
 encrypted loopback SSH forward. Paired authorization, bad-token rejection, repair/export
 refusal and separate backend/tunnel restarts passed over that real route. The service
-has no Workiva credentials or non-loopback egress; no workbook was accessed. Independent
-review covered the read-only deployment boundary, not overall release readiness.
-The paired extension is now installed and enabled in the owner's Mac Chrome 153
-profile through Load unpacked. Chrome reported zero manifest/runtime errors; its
-worker authenticated through the tunnel and rejected a bad token and malformed
-repair request, before and after extension reload. The native installation view was
-captured and inspected. This developer-assisted route does not close onboarding:
-clean-machine setup, a provisioned Workiva sandbox, in-page operation and first real
-inspection remain open. [Private installation](../extension/PACKAGING.md) and
+initially had no Workiva credentials or external egress. On September 16 the owner
+approved a private update and reads of an older implementation sandbox, excluding
+audit clients. The deployed service now admits only the selected August 8 RCTC
+document, its companion spreadsheet, their table IDs and one verified destination
+link. Root-only credential files, account-pin checks, missing-scope refusal,
+redirect refusal and the commissioning diagnostic passed independent security
+review. Workiva writes remain disabled. The live API-host allowlist uses verified
+IPv4 addresses; rotating IPv6 answers caused the first read attempt to time out.
+
+The matching package is installed in the owner's Mac Chrome 153 profile. Its
+standalone Connection & setup page is available on
+first installation, through Extension options and as the toolbar's no-panel fallback.
+The real setup button and a developer-assisted options-context request exercised
+the installed MV3 broker, SSH forward, service and old RCTC cell read; a malformed
+Apply request was refused. The rendered setup page was inspected. The Mac Workiva
+session is signed out, so the installed **in-page** journey still needs verification.
+The authenticated VPS browser confirmed the selected document in LSL Sandbox; its
+session was not copied to the Mac. Clean-machine onboarding remains untested.
+[Private installation](../extension/PACKAGING.md) and
 [deployment controls and rollback](../deploy/README.md).
 
-The next local candidate adds a standalone Connection & setup page, available on
-first installation, through Extension options and as the toolbar's no-panel fallback.
-It uses the real worker without opening a workbook; cancellation/late replies,
-missing callbacks, redacted failures, keyboard focus and narrow layouts are tested.
-It has not replaced the commissioned Mac package. Chrome does not support optional
+Cancellation/late replies, missing callbacks, redacted failures, keyboard focus and
+narrow setup layouts have fictional regression coverage. Chrome does not support optional
 `debugger` permission, so navigation/capture permission reduction remains unresolved
 rather than silently disabling those features.
 
@@ -90,7 +97,7 @@ Workiva sandbox test are required. Blocks live acceptance of G2–G5 and G7.
 
 Why: a table-level link or a green status does not explain an individual amount.
 
-**Open.** The local candidate now follows table-cell evidence on request, with a
+**Open.** The private build follows table-cell evidence on request, with a
 revision-bound return trail, retained origin value, cycle detection and a 10-step
 limit. Fictional two-step chains pass through both the demo and the installed
 MV3 worker/handler; return performs no new reads or writes. Wrong revisions,
@@ -99,10 +106,18 @@ Historical views deliberately omit native format, range-link listings and
 named-sheet resolution when the source workbook identity is unknown. This is
 in-panel evidence navigation, not movement across Workiva sheets or documents.
 General cross-workbook resolution, cross-sheet navigation, the linked document-table
-journey and installed live sandbox proof remain open. The candidate has not
-replaced the commissioned service or owner's installed extension.
+in-page journey and new-reviewer acceptance remain open.
 
-September 16 sandbox validation used an older rollforward example with seven sheets
+The September 16 private activation used the owner-selected older RCTC sandbox pair,
+not an audit client. The installed Mac broker read the Statement of Activities table
+at its recorded revision: report D12 linked to companion spreadsheet J18, whose
+stored SUMIFS formula and calculated value were returned. File metadata remained
+unchanged. This is a real broker/API source-chain proof, not a native-selection,
+cross-sheet navigation, accounting accuracy or complete in-page acceptance claim.
+All seven goals remain open; the backend suite passes 687 tests with 13 optional
+vision skips, including the exact CI pytest invocation.
+
+Earlier September 16 sandbox validation used a rollforward example with seven sheets
 and three report tables. Real backend reads followed a two-step formula chain and
 resolved a named-sheet reference. Native page-context readback exposed the live
 `/-1/` URL segment; a successful current-revision anchor read exposed nested
@@ -118,7 +133,7 @@ metadata mapped to report sections, and source tables matched the explicitly ope
 workbook's sheet metadata. This establishes a bounded mapping route, not a general
 cross-workbook resolver or an installed document-to-cell journey. Native document
 selection and navigation remain unimplemented. The installed-extension regression
-uses fictional transport; no live service, credentials or installed package changed.
+used fictional transport; that earlier validation did not update the installation.
 
 Source-follow requests now carry the opened workbook as a candidate, not authority.
 The backend checks the source table's sheet and that sheet's table identity at the
@@ -147,7 +162,7 @@ Fictional installed tests cover table choice, keyboard submit, two-step source r
 empty/unavailable sections, real 30-second timeouts, cancellation and late replies
 after a section change. Light/dark, 390px, error and scrolled evidence states were
 inspected. Native selection/navigation, general cross-workbook resolution and the
-installed live journey remain open. No commissioned package or service changed.
+installed in-page journey remain open. The later RCTC activation is recorded above.
 
 - Support the complete review journey across spreadsheet cells and linked document
   tables: inspect a value, see the supported source/destination relationship,
@@ -173,7 +188,7 @@ with spreadsheet-only evidence. Builds on the inspector; live proof depends on G
 Why: reviewers need an actionable queue, not a count of vaguely suspicious cells.
 
 **Open.** The unsupported zero-display detector and repair kind are disabled in the
-local candidate, including column-format apply and direct API requests. Neighbor
+private build, including column-format apply and direct API requests. Neighbor
 agreement is not a reporting convention; the demo's legitimate zero no longer creates
 review work. This is a product-level removal, not fixture filtering. The other format
 heuristics, independent labels and held-out accuracy evaluation remain unfinished;

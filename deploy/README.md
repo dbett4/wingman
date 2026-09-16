@@ -1,4 +1,4 @@
-# Private connection-only deployment
+# Private read-only deployment
 
 This profile runs Wingman on the authoritative VPS, not on the Mac. The Mac's
 launch agent runs only an SSH forward. Provisioning requires the owner's approval;
@@ -15,7 +15,7 @@ Browser → Mac 127.0.0.1:8770 → verified SSH to davgent → VPS 127.0.0.1:877
   denied. Ordinary authenticated inspection and GET scans remain implemented.
 - `serviceMode: read-only` reports that server-wide restriction separately from
   the connection diagnostic's `readOnly: true`. The latter alone is not a write gate.
-- The systemd profile uses a dynamic service identity, read-only code/filesystem,
+- The base systemd profile uses a dynamic service identity, read-only code/filesystem,
   private state, loopback-only IP traffic, and a systemd credential file. It removes
   Workiva credentials from the process environment. This commissioning profile
   cannot access Workiva, even if the browser requests an inspection.
@@ -73,7 +73,9 @@ Do not restart unrelated services or change host keys. The owner-approved Mac
 Chrome installation also passed worker-context connection/refusal probes before
 and after extension reload; see the [private installation guide](../extension/PACKAGING.md).
 Workiva credentials, network egress and a named sandbox inspection remain separate
-approval and verification steps. No live Workiva compatibility is established.
+approval and verification steps. The owner approved that scoped update on September
+16; the old RCTC report-to-source read passed through the installed Mac broker.
+This does not establish the in-page Workiva journey or general compatibility.
 
 To reverse commissioning, stop and disable `wingman-readonly.service` and boot out
 `com.wingman.vps-tunnel` on the Mac; disable that launchd label to prevent reload at
@@ -115,6 +117,11 @@ Provision this only after approval of the workspace, file scope and private upda
   DNS rotation can require an authorized same-host allowlist refresh; failed
   connectivity must not silently widen egress. The HTTP client also refuses
   foreign-origin read URLs and all redirects, including same-host redirects.
+  In the September 16 installation, rapidly changing IPv6 answers caused denied
+  connection attempts to time out. The private drop-in now resets
+  `RestrictAddressFamilies` to `AF_UNIX AF_INET` and allows only four freshly
+  verified API IPv4 addresses plus the base localhost allowance. The same report
+  read then completed in seconds. No wildcard network grant was added.
 - Preserve `WINGMAN_READ_ONLY=1`, the existing pair, base unit and previous release.
   Set `WINGMAN_EXT_ID` to the existing private installation's ID. After adopting
   the reviewed release/drop-in, run the connection checker with

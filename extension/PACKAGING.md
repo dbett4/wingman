@@ -27,28 +27,32 @@ separate decisions, not prerequisites for this private route.
 
 ## Verify connection without opening Workiva
 
-The commissioning backend intentionally has **no Workiva credentials or external
-network egress**. Do not open a client workbook to test installation.
+The base commissioning profile has no Workiva access. The owner's September 16
+update separately enabled scoped reads of an older RCTC sandbox pair, not audit
+clients. A connection check itself never opens a workbook.
 
-The local development candidate now includes **Connection & setup**. It opens on
+The installed private build includes **Connection & setup**. It opens on
 first installation, through **Extension options**, or when a toolbar click cannot
 reach a Workiva panel. Click **Check connection** there; no workbook or DevTools is
 needed. The page separates service authorization, backend credential presence and
 untested workbook access, and can copy redacted diagnostics. Updates do not open
-this page automatically or interrupt a review. This candidate has been tested in
-a disposable browser, not installed over the owner's commissioned Mac package.
+this page automatically or interrupt a review. The updated Mac setup page has
+been rendered and inspected with the existing pairing preserved.
 
 Run the sanitized transport checker on the Mac:
 
 ```bash
 python3 "$HOME/Library/Application Support/Wingman/check_connection.py" \
-  --extension-config "$HOME/Library/Application Support/Wingman/extension/local-config.js"
+  --extension-config "$HOME/Library/Application Support/Wingman/extension/local-config.js" \
+  --expect-credentials present
 ```
 
 That verifies the service and tunnel, not Chrome. Browser verification must also
 use the installed worker: a paired `/api/connection` request should return 200 with
-`authorization: accepted`, `serviceMode: read-only`, `workivaCredentials: missing`
-and `workivaAccess: not_tested`. A wrong token and an authenticated malformed POST
+`authorization: accepted`, `serviceMode: read-only`, `workivaCredentials: present`,
+`workivaReadScope: valid`, `workivaAccountPin: present` and `workivaAccess: not_tested`.
+For connection-only commissioning, omit the flag and expect missing credentials.
+A wrong token and an authenticated malformed POST
 to `/apply` must return 403; the latter must report `code: read_only`. Never print
 the paired token while probing. Repeat after Wingman's **Reload** control.
 
@@ -58,6 +62,16 @@ manifest/runtime errors. Worker-context connection and refusal probes passed bot
 before and after extension reload. No Workiva workbook was opened for these tests.
 This is developer-assisted installation proof, not clean-machine onboarding,
 in-page broker/content-script proof on Workiva, or product acceptance.
+
+**Observed September 16:** the matching updated package was byte-verified and
+reloaded in the existing installation. The setup button used the real worker;
+an options-page DevTools probe then exercised the MV3 broker through the SSH
+forward to the old RCTC report cell and its revision-bound source formula.
+Malformed Apply returned 403 `read_only`. This is developer-assisted broker/API
+proof. The Mac Workiva session is signed out, so the in-page selection, table-choice
+and return journey remains unverified there. The authenticated VPS browser confirmed
+the old file in LSL Sandbox without transferring its session. No Workiva edits
+were made; both selected files retained their August 8 modification timestamps.
 
 The earlier Chrome 149 automated-load failure was an observation from one spike;
 its alleged universal content-script suppression was not established. Disposable
