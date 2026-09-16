@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "server"))
 from test_demo import demo_url  # noqa: F401,E402 — shared disposable HTTP fixture
 
 
-def test_browser_workflow(demo_url):
+def test_browser_workflow(demo_url, tmp_path):
     executable = shutil.which("agent-browser")
     assert executable, "Install agent-browser and run `agent-browser install` first"
     session = "wm-" + uuid.uuid4().hex[:8]
@@ -45,8 +45,12 @@ def test_browser_workflow(demo_url):
         run("eval", f"[...{group}.querySelectorAll('button')].find(b=>b.textContent==='Apply').click()")
 
     def scan():
-        run("eval", f"{root}.querySelector('[data-tab=scan]').click()")
-        run("eval", f"{root}.querySelector('.wm-tab-actions .wm-btn.primary').click()")
+        # The CLI CSS locator does not pierce the panel's shadow root. Activate
+        # the real controls by keyboard rather than invoking their click handlers.
+        run("eval", f"{root}.querySelector('[data-tab=scan]').focus()")
+        run("press", "Enter")
+        run("eval", f"{root}.querySelector('.wm-tab-actions .wm-btn.primary').focus()")
+        run("press", "Enter")
 
     try:
         run("open", demo_url)
@@ -54,13 +58,18 @@ def test_browser_workflow(demo_url):
         run("wait", "--fn", ready + f" && {root}.querySelector('.wi-address')?.textContent === 'B2'")
         check("document.getElementById('request-count').textContent === '0 simulated API requests'")
         scan()
-        run("wait", "--fn", ready + f" && {root}.querySelectorAll('.wm-grp').length === 7")
+        run("wait", "--fn", ready + f" && {root}.querySelectorAll('.wm-grp').length === 6")
+        check(f"![...{root}.querySelectorAll('.wm-kind')].some(e=>e.textContent.includes('zero display'))")
         check(f"{root}.querySelector('.wm-fixall').textContent === 'Fix all 3 safe'")
         check(f"{root}.querySelector('[data-tab=checks]').disabled")
+        run("eval", f"{root}.querySelector('.wm-grp:last-child').scrollIntoView({{block:'center'}})")
+        run("screenshot", str(tmp_path / "review-queue-desktop.png"))
         run("set", "viewport", "390", "844", "2")
         check("document.documentElement.scrollWidth <= innerWidth")
         check(f"[...{root}.querySelectorAll('.wm-row')].every(r=>r.querySelector('.wm-sig').getBoundingClientRect().top >= r.querySelector('.wm-kind').getBoundingClientRect().bottom - 1)")
         check(f"[...{root}.querySelectorAll('.wm-sev')].every(s=>s.scrollWidth <= s.clientWidth + 1)")
+        run("eval", f"{root}.querySelector('.wm-grp:last-child').scrollIntoView({{block:'center'}})")
+        run("screenshot", str(tmp_path / "review-queue-narrow.png"))
         run("set", "viewport", "1280", "900", "2")
         preview_label()
         apply_label()
@@ -71,7 +80,7 @@ def test_browser_workflow(demo_url):
         run("click", "#reset")
         run("wait", "--fn", ready + f" && !!{root}.querySelector('.wi-inspector')")
         scan()
-        run("wait", "--fn", ready + f" && {root}.querySelectorAll('.wm-grp').length === 7")
+        run("wait", "--fn", ready + f" && {root}.querySelectorAll('.wm-grp').length === 6")
         run("click", "#failure")
         run("wait", "--fn", ready + " && document.getElementById('failure').getAttribute('aria-pressed') === 'true'")
         preview_label()
@@ -339,7 +348,8 @@ def test_inspector_evidence_and_navigation(demo_url):
         run("wait", "--fn", f"{root}.querySelector('.wi-inspector').textContent.includes('not a range')")
         check(f"!{root}.querySelector('.wi-inspect') && !{root}.querySelector('.wi-evidence')")
         run("eval", "history.replaceState(null, '', '#/doc/abcd')")
-        run("wait", "--fn", f"{root}.querySelector('.wi-inspector').textContent.includes('Document and comment tracing is not connected')")
+        run("wait", "--fn", f"{root}.querySelector('.wi-inspector').textContent.includes('Open a section in the current document view')")
+        check(f"!{root}.querySelector('.wi-doc-load') && !{root}.querySelector('.wi-evidence')")
         check("pending.length === 0")
         run("eval", "history.replaceState(null, '', '#/spreadsheet/de00/sheet/de01'); document.getElementById('address').textContent='B7'")
         run("wait", "--fn", f"!!{root}.querySelector('.wi-inspect')")

@@ -81,3 +81,51 @@ login. Preserve the release and private token unless deletion is explicitly want
 For an update rollback, stop the service, repoint `current` to the prior verified
 release, restart, and repeat the connection/write-refusal checks. Do not regenerate
 the pair or switch to a Mac backend as part of rollback.
+
+## Owner-approved sandbox read access
+
+The base unit remains connection-only. A credentialed test uses a separate private
+systemd drop-in, never a broader default unit or credentials in source control.
+Provision this only after approval of the workspace, file scope and private update.
+
+- Supply `/etc/wingman/workiva.json` through `LoadCredential=workiva:/etc/wingman/workiva.json`
+  and `Environment=WORKIVA_CREDENTIALS_FILE=%d/workiva`. Its two string keys are
+  `WORKIVA_CLIENT_ID` and `WORKIVA_CLIENT_SECRET`. Use the canonical workspace
+  connector to resolve the pair internally; never print it or pass it in argv.
+  Keep the source root-owned, mode 0600. A configured but unreadable/invalid file
+  fails closed; it cannot fall back to another workspace's environment or `.env`.
+- Set `WORKIVA_EXPECTED_ARID` to the verified decoded account identity
+  (`Account/<id>`). The service checks every newly minted token before caching it
+  and rechecks cached tokens before use. This checks an OAuth response received over verified TLS;
+  it is not standalone verification of an arbitrary caller-supplied JWT.
+- Supply a root-owned read-scope JSON through `LoadCredential=read-scope:...` and
+  `Environment=WORKIVA_READ_SCOPE_FILE=%d/read-scope`. Keys are `documents`,
+  `spreadsheets`, `tables`, `destinationLinks`, `sourceLinks`, and `anchors`; values
+  are arrays of exact resource IDs. Omitted kinds deny all. Derive table IDs from
+  the selected old files' metadata, not from a workspace-wide table inventory.
+  External linked sources are denied unless separately within the approved scope.
+  Missing, malformed, empty, or unknown-key scope files never mean unrestricted.
+  Credential-file mode and read-only mode require this scope and an account pin
+  before OAuth or any upstream GET, even if either variable name is omitted or
+  misspelled. Only standard local mode without a credential/scope file retains
+  unrestricted reads.
+- Keep `IPAddressDeny=any` and localhost access. Add only the verified TLS API
+  hostname's resolved IP addresses to `IPAddressAllow` in that private drop-in;
+  use the existing loopback DNS resolver. Do not add a wildcard network grant.
+  DNS rotation can require an authorized same-host allowlist refresh; failed
+  connectivity must not silently widen egress. The HTTP client also refuses
+  foreign-origin read URLs and all redirects, including same-host redirects.
+- Preserve `WINGMAN_READ_ONLY=1`, the existing pair, base unit and previous release.
+  Set `WINGMAN_EXT_ID` to the existing private installation's ID. After adopting
+  the reviewed release/drop-in, run the connection checker with
+  `--expect-credentials present`; it also requires `workivaReadScope: valid` and
+  `workivaAccountPin: present`. Then test the named old file through the
+  installed extension. Credential presence is still not proof of Workiva access.
+
+Rollback must restore **both code and isolation**: stop this service, move the
+sandbox drop-in out of the unit directory, restore the previous `current` target,
+daemon-reload and restart. Run the previous connection-only checker (credentials
+missing and write refusals intact). Preserve the inactive root-only credential
+files and prior extension package; do not rotate the pair. Restore the old Chrome
+package and reload it if the UI update fails. Never run the old service with the
+new credential/egress drop-in, since it lacks these read-scope guards.

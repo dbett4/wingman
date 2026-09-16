@@ -102,8 +102,9 @@ def test_real_scan_pages_and_does_not_propose_competing_year_fixes(browser):
         ("low-contrast", ("A5",), "safe-auto"),
         ("year-automatic-coercion", ("B2",), "safe-auto"),
         ("label-hygiene", ("A4",), "safe-auto"),
-        ("zero-display-mismatch", ("C8",), "surfaced"),
     }
+    # A valid zero has no established em-dash convention and creates no review work.
+    assert not any("C8" in item["addrs"] for item in data["items"])
     assert data["cellCount"] == 22  # Includes findings on page 2, not just the first five rows.
     assert data["truncated"] is False
     assert browser.state()["sheets"] == before["sheets"]

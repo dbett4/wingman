@@ -312,7 +312,6 @@ GATED_FORMAT_KINDS = frozenset({
     "number-on-accounting-column",
     "precision-mismatch",
     "prefix-mismatch",
-    "zero-display-mismatch",
     "negative-without-parens",
 })
 
@@ -462,6 +461,8 @@ def adjust_format_lane_findings(findings: list[dict], cells: list[dict]) -> list
 
 
 def scan_format_lane(cells: list[dict]) -> list[dict]:
+    # Zero presentation needs an explicit reporting convention. Neighbor agreement
+    # alone cannot establish one, so the legacy zero-display detector is disabled.
     raw: list[dict] = []
     for cell in cells:
         for det in (
@@ -469,7 +470,6 @@ def scan_format_lane(cells: list[dict]) -> list[dict]:
             detect_number_on_accounting_column,
             detect_precision_mismatch,
             detect_prefix_mismatch,
-            detect_zero_display_mismatch,
         ):
             hit = det(cell)
             if hit:

@@ -103,6 +103,7 @@ class HandlerRouteTests(unittest.TestCase):
                 self.assertEqual(data, {"service": "wingman", "protocol": 1, "readOnly": True,
                                        "authorization": "accepted", "workivaAccess": "not_tested",
                                        "serviceMode": "standard",
+                                       "workivaReadScope": "unrestricted", "workivaAccountPin": "missing",
                                        "workivaCredentials": expected})
                 self.assertNotIn("fictional", json.dumps(data))
             oauth.assert_not_called()
@@ -126,6 +127,22 @@ class HandlerRouteTests(unittest.TestCase):
             code, denied = self._request("/apply", method="POST", token=False, body={})
             self.assertEqual(code, 403)
             self.assertNotIn("code", denied, "The token gate must still run first")
+            oauth.assert_not_called()
+            table.assert_not_called()
+
+    def test_zero_display_repair_is_disabled_even_in_write_enabled_mode(self):
+        from unittest.mock import patch
+
+        with patch.dict(app.os.environ, {"WINGMAN_READ_ONLY": "0"}), \
+             patch.object(app, "_token", side_effect=AssertionError("No OAuth")) as oauth, \
+             patch.object(app, "_table_id", side_effect=AssertionError("No table lookup")) as table:
+            body = {"spreadsheetId": "book", "sheetId": "sheet", "addr": "C8",
+                    "kind": "zero-display-mismatch", "target": {"valueFormat": {
+                        "valueFormatType": "ACCOUNTING", "displayZeroAs": "EM DASH"}}}
+            for path in ("/fix", "/apply"):
+                code, data = self._request(path, method="POST", body=body)
+                self.assertEqual(code, 400)
+                self.assertIn("zero-display-mismatch", data["error"])
             oauth.assert_not_called()
             table.assert_not_called()
 
@@ -234,6 +251,8 @@ class HandlerRouteTests(unittest.TestCase):
             for query in ("tableId=x&addr=C12", "tableId=x&revision=&addr=C12",
                           "tableId=x&revision=r&addr=C12:D13", "tableId=x&revision=r&addr=C0",
                           "tableId=x&revision=r&addr=C12&revision=s", "tableId=x&revision=r&addr=C12&spreadsheetId=y",
+                          "tableId=x&revision=r&addr=C12&workbookHint=", "tableId=x&revision=r&addr=C12&workbookHint=%2Fbook",
+                          "tableId=x&revision=r&addr=C12&workbookHint=a&workbookHint=b",
                           "tableId=x&revision=%0A&addr=C12"):
                 self.assertEqual(self._request("/api/inspect-source?" + query)[0], 400, query)
             token.assert_not_called()
@@ -241,7 +260,34 @@ class HandlerRouteTests(unittest.TestCase):
              patch.object(app.wingman_config, "read_only_enabled", return_value=True), \
              patch.object(app.inspector, "inspect_source", return_value={"readOnly": True}) as inspect:
             self.assertEqual(self._request(path), (200, {"readOnly": True}))
-            inspect.assert_called_once_with("source", "rev-7", "C12", "synthetic", app._ctx)
+            inspect.assert_called_once_with("source", "rev-7", "C12", "synthetic", app._ctx, workbook_hint=None)
+            inspect.reset_mock()
+            self.assertEqual(self._request(path + "&workbookHint=candidate-book"), (200, {"readOnly": True}))
+            inspect.assert_called_once_with("source", "rev-7", "C12", "synthetic", app._ctx, workbook_hint="candidate-book")
+
+    def test_document_routes_require_authorization_and_exact_fields_before_oauth(self):
+        from unittest.mock import patch
+
+        catalog = "/api/document-tables?documentId=doc&sectionId=sec"
+        cell = "/api/inspect-document?documentId=doc&sectionId=sec&tableId=table&revision=rev&addr=C12"
+        with patch.object(app, "_token", side_effect=AssertionError("OAuth must not run")) as token:
+            for path in (catalog, cell):
+                self.assertEqual(self._request(path, token=False)[0], 403)
+                for invalid in (path + "&documentId=other", path + "&unknown=1",
+                                path.replace("documentId=doc", "documentId="), path.replace("sectionId=sec", "sectionId=../sec")):
+                    self.assertEqual(self._request(invalid)[0], 400, invalid)
+            for invalid in (cell.replace("revision=rev", "revision="), cell.replace("addr=C12", "addr=C12:D13"),
+                            cell.replace("tableId=table", "tableId=%0A")):
+                self.assertEqual(self._request(invalid)[0], 400, invalid)
+            token.assert_not_called()
+        with patch.object(app, "_token", return_value="fictional"), \
+             patch.object(app.wingman_config, "read_only_enabled", return_value=True), \
+             patch.object(app.inspector, "document_tables", return_value={"readOnly": True}) as tables, \
+             patch.object(app.inspector, "inspect_document", return_value={"readOnly": True}) as inspect:
+            self.assertEqual(self._request(catalog), (200, {"readOnly": True}))
+            tables.assert_called_once_with("doc", "sec", "fictional", app._ctx)
+            self.assertEqual(self._request(cell), (200, {"readOnly": True}))
+            inspect.assert_called_once_with("doc", "sec", "table", "rev", "C12", "fictional", app._ctx)
 
     def test_guarded_route_rejects_when_service_token_missing(self):
         original = app.WINGMAN_TOKEN

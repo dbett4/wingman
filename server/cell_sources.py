@@ -212,7 +212,9 @@ def cell_link(content, table_id, token, ctx):
                 or raw_anchor["content"]["type"] != "table" or raw_anchor["content"]["table"] != source_table
                 or raw_anchor["attachmentPoint"]["type"] != "tableRange"):
             raise ValueError("Source anchor identity or revision mismatch")
-        bounds = _bounds(raw_anchor["attachmentPoint"])
+        attachment = raw_anchor["attachmentPoint"]
+        # The native API nests tableRange; the published example flattens it.
+        bounds = _bounds(attachment.get("tableRange", attachment))
         if bounds[0] != bounds[1] or bounds[2] != bounds[3]:
             raise ValueError("Cell source anchor is not a single cell")
         result.update(resolution="observed", sourceCell=_range_text(bounds))

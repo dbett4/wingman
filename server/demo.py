@@ -100,11 +100,28 @@ class Workbook:
         url = urlparse(raw_path)
         path, query = url.path, parse_qs(url.query)
         current_revision = "demo-current-" + str(len(self.events))
+        document = FIXTURE["document"]
+        if method == "GET" and path.startswith(f"/documents/{document['id']}/"):
+            if query.get("$revision", [document["revision"]]) != [document["revision"]]:
+                raise ValueError("Document revision is not part of this simulation")
+            if path == f"/documents/{document['id']}/tables":
+                return {"revision": document["revision"], "data": copy.deepcopy(document["tables"])}
+            for section in document["sections"]:
+                if path == f"/documents/{document['id']}/sections/{section['id']}":
+                    return {**copy.deepcopy(section), "revision": document["revision"]}
+            raise ValueError("Document section is not part of this simulation")
         if method == "GET" and path == f"/spreadsheets/{WORKBOOK}/sheets":
             if query.get("$revision", [current_revision]) != [current_revision]:
                 raise ValueError("Revision is not part of this simulation")
             return {"data": [{"id": s["id"], "name": s["name"], "table": {"table": s["id"], "revision": current_revision}}
                              for s in self.sheets]}
+        sheet_path = re.fullmatch(rf"/spreadsheets/{WORKBOOK}/sheets/(de0[12])", path)
+        if method == "GET" and sheet_path:
+            if query.get("$revision", [current_revision]) != [current_revision]:
+                raise ValueError("Revision is not part of this simulation")
+            sheet = self.sheet(sheet_path[1])
+            return {"id": sheet["id"], "name": sheet["name"], "revision": current_revision,
+                    "table": {"table": sheet["id"], "revision": current_revision}}
         if method == "GET":
             for link in FIXTURE["publishedRangeLinks"]:
                 if (path == f"/content/tables/{link['table']}/rangeLinks/{link['id']}"
@@ -118,7 +135,7 @@ class Workbook:
                 if (path == f"/content/tables/{anchor['content']['table']}/anchors/{anchor['id']}"
                         and query.get("$revision") == [anchor["revision"]]):
                     return copy.deepcopy(anchor)
-        content = re.fullmatch(r"/content/tables/(de0[12]|demo-notes-table|demo-year-support)/(cells|rangeLinks|properties)", path)
+        content = re.fullmatch(r"/content/tables/(de0[12]|demo-notes-table|demo-year-support|demo-report-table)/(cells|rangeLinks|properties)", path)
         if method == "GET" and content:
             published = FIXTURE["publishedTables"].get(content[1])
             sheet = published or self.sheet(content[1])
@@ -126,7 +143,8 @@ class Workbook:
             if query.get("$revision", [revision]) != [revision]:
                 raise ValueError("Revision is not part of this simulation")
             if content[2] == "properties":
-                return {"id": content[1], "name": sheet["name"], "revision": revision}
+                return {"id": content[1], "name": sheet["name"], "revision": revision,
+                        **({"sheet": sheet["id"]} if not published else {})}
             if content[2] == "rangeLinks":
                 return {"data": copy.deepcopy(sheet["rangeLinks"])}
             r0, r1, c0, c1 = [int(query[k][0]) for k in ("startRow", "stopRow", "startColumn", "stopColumn")]
@@ -255,7 +273,8 @@ ASSETS = {"/": "demo/index.html", "/demo/demo.css": "demo/demo.css", "/demo/demo
           "/wingman-connection.js": "extension/wingman-connection.js",
           "/wingman-core.js": "extension/wingman-core.js", "/wingman-panel.js": "extension/wingman-panel.js",
           "/icons/icon128.png": "extension/icons/icon128.png"}
-GET_ROUTES = {"/config", "/api/inspect", "/api/inspect-source", "/api/queue", "/api/review-packet"}
+GET_ROUTES = {"/config", "/api/inspect", "/api/inspect-source", "/api/document-tables", "/api/inspect-document",
+              "/api/queue", "/api/review-packet"}
 POST_ROUTES = {"/fix", "/apply", "/demo/reset", "/demo/failure"}
 
 

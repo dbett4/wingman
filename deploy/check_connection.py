@@ -16,7 +16,7 @@ def require(condition):
         raise ValueError("Connection contract not satisfied")
 
 
-def probe(token):
+def probe(token, expected_credentials="missing"):
     def request(path, *, auth=None, method="GET", body=None):
         connection = http.client.HTTPConnection("127.0.0.1", 8770, timeout=10)
         try:
@@ -34,10 +34,14 @@ def probe(token):
         require(request("/api/connection", auth=auth)[0] == 403)
     code, data = request("/api/connection", auth=token)
     require(code == 200)
+    scope = data.pop("workivaReadScope", None)
+    account = data.pop("workivaAccountPin", None)
+    if expected_credentials == "present":
+        require(scope == "valid" and account == "present")
     require(data == {
         "service": "wingman", "protocol": 1, "readOnly": True,
         "authorization": "accepted", "workivaAccess": "not_tested",
-        "serviceMode": "read-only", "workivaCredentials": "missing",
+        "serviceMode": "read-only", "workivaCredentials": expected_credentials,
     })
     for path in ("/apply", "/apply/", "/fix", "/api/queue"):
         code, refusal = request(path, auth=token, method="POST", body=b"not-json")
@@ -47,7 +51,8 @@ def probe(token):
         require(code == 403 and refusal.get("code") == "read_only")
     return {"connection": "accepted", "service_mode": "read-only",
             "unauthorized_requests": "rejected", "repairs_and_exports": "rejected",
-            "workiva_credentials": "absent", "workiva_access": "not_tested"}
+            "read_scope": scope, "account_pin": account,
+            "workiva_credentials": expected_credentials, "workiva_access": "not_tested"}
 
 
 def main():
@@ -55,6 +60,7 @@ def main():
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--token-file", type=Path)
     source.add_argument("--extension-config", type=Path)
+    parser.add_argument("--expect-credentials", choices=("missing", "present"), default="missing")
     args = parser.parse_args()
     try:
         if args.token_file:
@@ -64,7 +70,7 @@ def main():
             if not match:
                 raise ValueError("Invalid configuration")
             token = json.loads(match.group(1))["token"]
-        result = probe(token)
+        result = probe(token, args.expect_credentials)
     except Exception as error:
         # No response body, configuration content or secret-bearing traceback.
         print("Connection verification failed: " + type(error).__name__, file=sys.stderr)

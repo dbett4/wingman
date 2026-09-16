@@ -8,9 +8,12 @@
     if (!demo && (url.protocol !== "https:" || !/(^|\.)(wdesk|workiva)\.com$/.test(url.hostname))) {
       return { message: "Open a Workiva spreadsheet to inspect a cell." };
     }
-    var m = path.match(/^(?:\/a\/([A-Za-z0-9_-]+))?\/spreadsheet\/([A-Za-z0-9_-]+)\/sheet\/([A-Za-z0-9_-]+)\/?$/);
+    var doc = path.match(/^\/a\/([A-Za-z0-9_-]+)\/doc\/([A-Za-z0-9_-]+)\/r\/-1\/v\/1\/sec\/([A-Za-z0-9_-]+)\/?$/);
+    if (doc) return { document: { workspaceId: doc[1], documentId: doc[2], sectionId: doc[3] } };
+    // -1 is Workiva's live-sheet route. Other revisions must not read latest data.
+    var m = path.match(/^(?:\/a\/([A-Za-z0-9_-]+))?\/spreadsheet\/([A-Za-z0-9_-]+)(?:\/-1)?\/sheet\/([A-Za-z0-9_-]+)\/?$/);
     if (!m) return { message: /\/doc\//.test(path)
-      ? "Document and comment tracing is not connected yet. Open the source spreadsheet to inspect a cell."
+      ? "Open a section in the current document view to choose a table cell. Historical pages and inline text are not supported."
       : "Open a spreadsheet sheet to inspect a cell." };
     var addr = String(address || "").trim();
     if (!/^[A-Z]{1,3}[1-9][0-9]{0,6}$/.test(addr)) return {
@@ -20,9 +23,10 @@
     return { target: { workspaceId: m[1] || null, spreadsheetId: m[2], sheetId: m[3], addr: addr } };
   }
 
-  function key(context) { return JSON.stringify(context.target || context.message); }
+  function key(context) { return JSON.stringify(context.target || context.document || context.message); }
   function matches(target, reply) {
-    return !!reply && ["spreadsheetId", "sheetId", "addr"].every(function (k) { return target[k] === reply[k]; });
+    var fields = target.documentId ? ["documentId", "sectionId", "tableId", "revision", "addr"] : ["spreadsheetId", "sheetId", "addr"];
+    return !!reply && fields.every(function (k) { return target[k] === reply[k]; });
   }
   function matchesSource(target, reply) {
     return !!reply && ["tableId", "revision", "addr"].every(function (k) { return target[k] === reply[k]; });
@@ -51,7 +55,7 @@
     return parts.join(" · ");
   }
 
-  function render(body, context, state, inspect, follow, back) {
+  function render(body, context, state, inspect, follow, back, documentActions) {
     var hadFocus = body.contains(body.getRootNode().activeElement);
     var trail = state.trail || [], tracing = trail.length > 0;
     function el(tag, cls, text) {
@@ -61,12 +65,63 @@
       return e;
     }
     var page = el("section", "wi-inspector");
-    page.setAttribute("aria-label", "Selected cell inspector");
+    page.setAttribute("aria-label", context.document ? "Document table inspector" : "Selected cell inspector");
     page.tabIndex = -1;
     var head = el("div", "wi-heading");
-    head.appendChild(el("span", "wi-eyebrow", tracing ? "SOURCE EVIDENCE" : "SELECTED CELL"));
+    head.appendChild(el("span", "wi-eyebrow", tracing ? "SOURCE EVIDENCE" : context.document ? "DOCUMENT TABLE" : "SELECTED CELL"));
     head.appendChild(el("span", "wi-readonly", "Read-only"));
     page.appendChild(head);
+    if (context.document && !context.target) {
+      page.appendChild(el("h2", "wi-doc-heading", "Inspect a report table"));
+      page.appendChild(el("p", "wi-description", "Choose a table in this section and enter a cell address. Wingman does not detect or move your selection in the document."));
+      var catalog = state.catalog;
+      var load = el("button", "wm-btn wi-doc-load" + (catalog ? "" : " primary"), state.loading ? "Reading tables…" : catalog ? "Reload tables" : "Read section tables");
+      load.type = "button"; load.disabled = !!state.loading; load.onclick = documentActions.load;
+      page.appendChild(load);
+      var status = el("p", "wi-description", state.error || (state.loading ? "Reading table identities only. No document changes." : ""));
+      status.setAttribute("role", "status"); page.appendChild(status);
+      if (state.loading) {
+        var stop = el("button", "wm-btn wi-doc-change", "Stop waiting");
+        stop.onclick = function () { documentActions.choose(null); }; page.appendChild(stop);
+      }
+      if (catalog) {
+        page.appendChild(el("p", "wi-sheet", catalog.sectionName || "Current section"));
+        page.appendChild(el("p", "wi-description", "Read at " + new Date(catalog.observedAt).toLocaleTimeString() + ". Reload tables after edits."));
+        if (!catalog.tables.length) page.appendChild(el("p", "wi-description", "No body tables in this section. Header, footer and inline text inspection are not supported."));
+        else {
+          var form = el("form", "wi-doc-form");
+          var tableLabel = el("label", null, "Table"), select = el("select", "wi-doc-table");
+          select.required = true;
+          var placeholder = el("option", null, "Choose a table"); placeholder.value = ""; select.appendChild(placeholder);
+          catalog.tables.forEach(function (table, index) {
+            var option = el("option", null, (index + 1) + ". " + table.name); option.value = table.tableId; select.appendChild(option);
+          });
+          tableLabel.appendChild(select); form.appendChild(tableLabel);
+          var cellLabel = el("label", null, "Cell address"), input = el("input", "wi-doc-address");
+          input.type = "text"; input.required = true; input.placeholder = "e.g. B3";
+          input.pattern = "[A-Za-z]{1,3}[1-9][0-9]{0,6}"; input.maxLength = 10;
+          input.autocomplete = "off"; input.spellcheck = false;
+          cellLabel.appendChild(input); form.appendChild(cellLabel);
+          var submit = el("button", "wm-btn primary", "Inspect cell & direct sources"); submit.type = "submit"; form.appendChild(submit);
+          form.onsubmit = function (event) {
+            event.preventDefault();
+            documentActions.choose({tableId: select.value, revision: catalog.revision, addr: input.value.toUpperCase()});
+          };
+          page.appendChild(form);
+        }
+        var identity = el("details", "wi-details");
+        identity.appendChild(el("summary", null, "Context & revision"));
+        var fields = el("dl", "wi-evidence");
+        row(fields, "Document ID", context.document.documentId, true);
+        row(fields, "Section ID", context.document.sectionId, true);
+        row(fields, "Recorded revision", catalog.revision, true);
+        identity.appendChild(fields);
+        page.appendChild(identity);
+      }
+      body.replaceChildren(page);
+      if (hadFocus) page.focus();
+      return;
+    }
     if (!context.target) {
       page.appendChild(el("h2", "wi-address", "Start with one cell"));
       page.appendChild(el("p", "wi-description", context.message));
@@ -81,7 +136,7 @@
       navigation.setAttribute("aria-label", "Source evidence return path");
       [state.data].concat(trail).forEach(function (entry, index) {
         if (index) navigation.appendChild(el("span", "wi-trail-arrow", "→"));
-        var label = index === 0 ? "Selected " + entry.target.addr : entry.target.addr;
+        var label = index === 0 ? (context.document ? "Chosen " : "Selected ") + entry.target.addr : entry.target.addr;
         var step = el(index === trail.length ? "span" : "button", "wi-trail-step", label);
         step.title = (entry.sheetName || entry.tableName || entry.tableId || "Source") + " · " + entry.contentRevision;
         step.setAttribute("aria-label", label + " · " + step.title);
@@ -90,15 +145,22 @@
         navigation.appendChild(step);
       });
       page.appendChild(navigation);
-      page.appendChild(el("p", "wi-origin", "Started at " + (state.data.sheetName || "Selected sheet") + " · " +
+      page.appendChild(el("p", "wi-origin", "Started at " + (state.data.sheetName || state.data.tableName || "Selected sheet") + " · " +
         context.target.addr + ": " + valueText(state.data.content) +
         (state.data.content.kind === "formula" ? " · result " + valueText(state.data.calculated) : "") +
         " · revision " + state.data.contentRevision));
     }
     page.appendChild(el("h2", "wi-address", target.addr));
-    page.appendChild(el("p", "wi-sheet", tracing ? data.tableName || "Source table" : data && data.sheetName ? data.sheetName : "Sheet " + target.sheetId));
+    page.appendChild(el("p", "wi-sheet", tracing ? data.tableName || "Source table" : context.document
+      ? data && data.tableName || "Chosen document table" : data && data.sheetName ? data.sheetName : "Sheet " + target.sheetId));
+    if (context.document) {
+      page.appendChild(el("p", "wi-description", "Explicit table-cell choice, not the document's native selection. Recorded revision: " + context.target.revision + "."));
+      var change = el("button", "wm-btn wi-doc-change", state.loading ? "Stop waiting / change cell" : "Choose another table cell");
+      change.type = "button"; change.onclick = function () { documentActions.choose(null); }; page.appendChild(change);
+    }
     if (tracing) page.appendChild(el("p", "wi-description", "Recorded revision: " + target.revision + ". Your Workiva selection has not moved."));
-    var button = el("button", "wm-btn primary wi-inspect", tracing ? "Return to selected cell" : state.loading ? "Reading cell…" : "Inspect selected cell");
+    var button = el("button", "wm-btn primary wi-inspect", tracing ? context.document ? "Return to chosen cell" : "Return to selected cell"
+      : state.loading ? "Reading cell…" : context.document ? "Reread chosen revision" : "Inspect selected cell");
     button.type = "button";
     button.disabled = !!state.loading;
     button.onclick = tracing ? function () { back(0); } : inspect;
@@ -111,7 +173,7 @@
       : data && data.status === "unavailable" ? "No cell evidence returned. Inspect again to retry."
       : data && data.status === "changed" ? "Cell or content revision changed while reading. Inspect again."
       : data ? "Read at " + new Date(data.observedAt).toLocaleTimeString() + (tracing
-        ? ". Saved evidence, not a live update." : ". Inspect again after edits.")
+        ? ". Saved evidence, not a live update." : context.document ? ". Reload tables to read newer revisions." : ". Inspect again after edits.")
         : "See the content, result and format separately. No changes will be made.");
     page.appendChild(feedback);
     if (state.traceLoading || state.traceError) {
@@ -217,7 +279,7 @@
         }
         var canReadSources = (formula.references || []).length || (cellLink && cellLink.resolution === "observed") ||
           items.some(function (link) { return link.direction === "destination"; });
-        if (canReadSources && !tracing) {
+        if (canReadSources && !tracing && !context.document) {
           var sourceButton = el("button", "wm-btn wi-read-sources", sourceValues ? "Refresh source values" : "Read source values");
           sourceButton.type = "button";
           sourceButton.onclick = function () { inspect(true); };
@@ -316,7 +378,16 @@
       var metadata = el("dl", "wi-evidence");
       if (tracing) {
         row(metadata, "Source table ID", target.tableId, true);
-        row(metadata, "Source workbook location", "Not established; no workbook navigation offered");
+        if (data.location && data.location.status === "observed") {
+          row(metadata, "Workbook ID", data.location.spreadsheetId, true);
+          row(metadata, "Sheet ID", data.location.sheetId, true);
+          row(metadata, "Source workbook location", "Matched at the recorded revision. Workiva selection has not moved.");
+        } else row(metadata, "Source workbook location", "Not established; no workbook navigation offered");
+      } else if (context.document) {
+        row(metadata, "Page workspace", target.workspaceId);
+        row(metadata, "Document ID", target.documentId, true);
+        row(metadata, "Section ID", target.sectionId, true);
+        row(metadata, "Table ID", target.tableId, true);
       } else {
         row(metadata, "Page workspace", target.workspaceId || "Not supplied by this page");
         row(metadata, "Workbook ID", target.spreadsheetId, true);
@@ -343,6 +414,7 @@
     ".wi-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.wi-eyebrow{font-size:10px;letter-spacing:.09em;color:var(--muted);font-weight:600}.wi-readonly{font-size:11px;color:var(--muted)}" +
     ".wi-address{font-size:32px;line-height:1.15;font-weight:500;letter-spacing:-.04em;margin:10px 0 4px}.wi-sheet{margin:0 0 14px;color:var(--muted)}" +
     ".wi-inspect{min-height:40px;width:100%}.wi-inspect:disabled{opacity:.65;cursor:wait}.wi-description{color:var(--muted);font-size:12px;line-height:1.55;margin:10px 0 12px}" +
+    ".wi-doc-heading{font-size:22px;line-height:1.25;font-weight:500}.wi-doc-form{display:grid;gap:14px}.wi-doc-form label{display:grid;gap:6px;font-size:12px;color:var(--muted)}.wi-doc-form input,.wi-doc-form select{width:100%;min-width:0;min-height:40px;border:1px solid var(--border-soft);border-radius:4px;background:var(--bg);color:var(--fg);font:inherit;padding:8px}.wi-doc-form button,.wi-doc-load,.wi-doc-change{width:100%;min-height:40px}.wi-doc-change{margin-bottom:8px}" +
     ".wi-evidence,.wi-scope{margin:0}.wi-row{padding:5px 0;border-top:1px solid var(--border-soft)}.wi-row dt{font-size:11px;color:var(--muted);margin-bottom:4px}.wi-row dd{margin:0;font-size:13px}.wi-row code{font:12px/1.6 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere}" +
     ".wi-warning{font-size:12px;line-height:1.55;color:var(--muted);border-left:2px solid var(--warn);padding-left:10px;margin:12px 0}.wi-details{margin:8px 0 0}.wi-details summary{min-height:40px;cursor:pointer;display:list-item;padding:10px 0;color:var(--accent-text)}" +
     ".wi-sources{margin:8px 0;border-top:1px solid var(--border-soft);border-bottom:1px solid var(--border-soft)}.wi-sources>summary{font-size:13px;line-height:1.5}.wi-source-summary{display:block;font-size:11px;color:var(--muted);margin-top:4px}.wi-link{border-top:1px solid var(--border-soft)}.wi-link summary{font-size:12px;line-height:1.5}" +

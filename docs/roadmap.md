@@ -98,9 +98,56 @@ missing evidence, cancellation, timeout and stale replies have regression covera
 Historical views deliberately omit native format, range-link listings and
 named-sheet resolution when the source workbook identity is unknown. This is
 in-panel evidence navigation, not movement across Workiva sheets or documents.
-Verified source-workbook mapping, cross-sheet navigation, the linked document-table
-journey and authorized live sandbox proof remain open. The candidate has not
+General cross-workbook resolution, cross-sheet navigation, the linked document-table
+journey and installed live sandbox proof remain open. The candidate has not
 replaced the commissioned service or owner's installed extension.
+
+September 16 sandbox validation used an older rollforward example with seven sheets
+and three report tables. Real backend reads followed a two-step formula chain and
+resolved a named-sheet reference. Native page-context readback exposed the live
+`/-1/` URL segment; a successful current-revision anchor read exposed nested
+`attachmentPoint.tableRange.range`. Both compatibility defects are fixed locally,
+and fictional regression fixtures now exercise those native shapes. Historical
+routes remain rejected rather than reading latest data.
+
+The sampled connected links returned source-table identities, but historical anchor
+reads returned HTTP 500 through both the table-specific and generic endpoints; the
+same-revision anchor list also failed. Current-revision anchors worked and were
+used only to diagnose the schema, never as historical substitutes. Document table
+metadata mapped to report sections, and source tables matched the explicitly opened
+workbook's sheet metadata. This establishes a bounded mapping route, not a general
+cross-workbook resolver or an installed document-to-cell journey. Native document
+selection and navigation remain unimplemented. The installed-extension regression
+uses fictional transport; no live service, credentials or installed package changed.
+
+Source-follow requests now carry the opened workbook as a candidate, not authority.
+The backend checks the source table's sheet and that sheet's table identity at the
+recorded revision before resolving named-sheet formulas. A missing, denied or
+mismatched lookup retains table evidence without granting workbook context. Live
+sandbox reads followed a named-sheet formula through two steps to its stored year;
+the same first step without verified workbook context remained unresolved.
+Installed MV3 tests with fictional transport verified the location display and
+return without new reads or writes. Desktop and 390px location views were inspected.
+
+The browser lease subsequently became available. In the sampled document, tables
+rendered as SVG rather than accessible cell grids. Resource identities matched API
+table metadata, but the tested viewing-mode signals did not expose a cell address.
+The local candidate therefore offers **explicit table and A1 choice**, not native
+selection detection: read the section's table list, choose a table/cell, then inspect.
+Each cell read rechecks section membership at the chosen revision. Incomplete or
+mismatched metadata is refused before reading the cell. Source trails and return
+reuse the same inspector without moving the Workiva page.
+
+Read-only sandbox validation read a linked report cell and rejected a table from
+another section. The catalog revision differed from the earlier baseline, so that
+attempt stopped before a cell read; a new explicit catalog read pinned the subsequent
+inspection. Its before/after revisions matched. The cause of the earlier revision
+change is unknown; historical source-anchor lookup still failed without fallback.
+Fictional installed tests cover table choice, keyboard submit, two-step source return,
+empty/unavailable sections, real 30-second timeouts, cancellation and late replies
+after a section change. Light/dark, 390px, error and scrolled evidence states were
+inspected. Native selection/navigation, general cross-workbook resolution and the
+installed live journey remain open. No commissioned package or service changed.
 
 - Support the complete review journey across spreadsheet cells and linked document
   tables: inspect a value, see the supported source/destination relationship,
@@ -124,6 +171,13 @@ with spreadsheet-only evidence. Builds on the inspector; live proof depends on G
 ## G3. Findings explain what matters without creating review noise
 
 Why: reviewers need an actionable queue, not a count of vaguely suspicious cells.
+
+**Open.** The unsupported zero-display detector and repair kind are disabled in the
+local candidate, including column-format apply and direct API requests. Neighbor
+agreement is not a reporting convention; the demo's legitimate zero no longer creates
+review work. This is a product-level removal, not fixture filtering. The other format
+heuristics, independent labels and held-out accuracy evaluation remain unfinished;
+no precision/recall or general repair-safety claim follows from this change.
 
 - Give each finding its location, observed evidence, reason, coverage limits and
   next action. Separate definite defects, judgment calls and incomplete checks.

@@ -40,6 +40,11 @@ function eq(label, got, want) {
   const href = "https://app.wdesk.com/a/workspace-a/spreadsheet/book-b/sheet/sheet-c";
   const target = { workspaceId: "workspace-a", spreadsheetId: "book-b", sheetId: "sheet-c", addr: "C12" };
   eq("inspector exact context", wi.selection(href, " C12 "), { target });
+  eq("inspector live Workiva revision route", wi.selection(href.replace("/sheet/", "/-1/sheet/"), "C12"), { target });
+  for (const revision of ["0", "42", "historical-revision", "-2"]) {
+    eq("inspector does not read latest for historical route " + revision,
+      !!wi.selection(href.replace("/sheet/", "/" + revision + "/sheet/"), "C12").target, false);
+  }
   for (const changed of [href.replace("workspace-a", "workspace-b"), href.replace("book-b", "book-c"), href.replace("sheet-c", "sheet-d")]) {
     eq("inspector identity changes at " + changed, wi.key(wi.selection(changed, "C12")) !== wi.key({ target }), true);
   }
@@ -77,6 +82,22 @@ function eq(label, got, want) {
   eq("root cell is part of cycle detection", wi.traceBlock(origin, [], { tableId: "table-a", revision: "rev-9", addr: "C12" }).startsWith("Already"), true);
   eq("tenth step allowed", wi.traceBlock(origin, Array(9).fill({ target: {} }), source), "");
   eq("eleventh step blocked", wi.traceBlock(origin, Array(10).fill({ target: {} }), source).startsWith("10-step"), true);
+
+  const docUrl = "https://app.wdesk.com/a/workspace-a/doc/doc-b/r/-1/v/1/sec/sec-c";
+  const doc = { workspaceId: "workspace-a", documentId: "doc-b", sectionId: "sec-c" };
+  eq("document URL gives section scope, never a native cell", wi.selection(docUrl, "B2"), { document: doc });
+  for (const invalid of [docUrl.replace("/-1/", "/9/"), docUrl.replace("/v/1/", "/v/2/"), docUrl.replace("wdesk.com", "wdesk.com.evil.invalid")]) {
+    eq("unsupported document route refused " + invalid, !!wi.selection(invalid).document, false);
+  }
+  for (const field of ["workspaceId", "documentId", "sectionId"]) {
+    eq("document scope changes with " + field, wi.key({ document: { ...doc, [field]: "another" } }) !== wi.key({ document: doc }), true);
+  }
+  const chosen = { ...doc, tableId: "report-table", revision: "report-5", addr: "C12" };
+  eq("document evidence matches exact choice", wi.matches(chosen, { ...chosen }), true);
+  for (const field of ["documentId", "sectionId", "tableId", "revision", "addr"]) {
+    eq("document evidence rejects changed " + field, wi.matches(chosen, { ...chosen, [field]: "another" }), false);
+  }
+  eq("spreadsheet evidence cannot match document choice", wi.matches(chosen, target), false);
 })();
 
 // --- connection evidence is not Workiva access ---
@@ -534,7 +555,7 @@ eq("garbage",        classifyAddress("US").status,    "drift-shape");
     presets: { acfr: { spreadsheetId: ACFR_PRESET_SS_ID, label: "ACFR preset" } },
     safe_fix_kinds: ["low-contrast", "label-hygiene", "negative-without-parens", "junk-decimal",
       "missing-thousands-separator", "number-on-accounting-column", "precision-mismatch",
-      "prefix-mismatch", "zero-display-mismatch", "year-automatic-coercion"],
+      "prefix-mismatch", "year-automatic-coercion"],
   });
   eq("tabLabel scan", tabLabel("scan"), "Scan");
   eq("tabLabel checks", tabLabel("checks"), "Checks");
@@ -686,6 +707,8 @@ eq("garbage",        classifyAddress("US").status,    "drift-shape");
   };
   eq("resolveGatedTargets flat", resolveGatedTargets(gatedGroup).length, 1);
   eq("hasGatedFormatApply true", hasGatedFormatApply(gatedGroup), true);
+  eq("legacy zero-display target cannot enable column apply",
+    hasGatedFormatApply({ ...gatedGroup, kind: "zero-display-mismatch" }), false);
   eq("columnApplyConfirmCopy apply destructive", columnApplyConfirmCopy(3, "E", "apply", "ACCOUNTING").destructive, true);
   eq("columnApplyConfirmCopy fix body", columnApplyConfirmCopy(2, "E", "fix", "ACCOUNTING").body.includes("column E"), true);
   eq("columnSafeApplyLabel", columnSafeApplyLabel(4, "B"), "Apply column B (4)");

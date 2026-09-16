@@ -18,10 +18,13 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 import ssl
 import sys
 import urllib.parse
 import urllib.request
+
+import wingman_config
 
 REGIONS = {"us": "https://api.app.wdesk.com", "eu": "https://api.eu.wdesk.com", "apac": "https://api.apac.wdesk.com"}
 AUTH_PATH = "/iam/v1/oauth2/token"
@@ -55,6 +58,17 @@ class AuthError(RuntimeError):
 
 
 def _resolve_credentials():
+    # An explicitly configured file is authoritative. Never fall back to a
+    # different workspace's environment/.env when that file is broken.
+    if "WORKIVA_CREDENTIALS_FILE" in os.environ:
+        try:
+            data = json.loads(pathlib.Path(os.environ["WORKIVA_CREDENTIALS_FILE"]).read_text(encoding="utf-8"))
+            cid, sec = data[CLIENT_ID_ENV], data[CLIENT_SECRET_ENV]
+            if not all(isinstance(value, str) and value.strip() for value in (cid, sec)):
+                raise ValueError()
+            return cid, sec
+        except (OSError, ValueError, KeyError, TypeError):
+            raise AuthError("NO_CREDENTIALS: configured Workiva credential file is unavailable or invalid") from None
     cid, sec = os.environ.get(CLIENT_ID_ENV, ""), os.environ.get(CLIENT_SECRET_ENV, "")
     if cid and sec:
         return cid, sec
@@ -79,34 +93,114 @@ def _resolve_credentials():
     raise AuthError(f"NO_CREDENTIALS: set {CLIENT_ID_ENV} + {CLIENT_SECRET_ENV}")
 
 
+def credentials_present():
+    """Configuration readability only; never authenticate or expose its contents."""
+    try:
+        _resolve_credentials()
+        return True
+    except AuthError:
+        return False
+
+
+class ReadScopeError(PermissionError):
+    """The private installation has not authorized this upstream resource."""
+
+
+def _read_scope():
+    # Private/read-only installations cannot opt out by omitting or misspelling
+    # the scope setting. Unrestricted reads exist only in standard local mode.
+    if (not wingman_config.read_only_enabled() and "WORKIVA_CREDENTIALS_FILE" not in os.environ
+            and "WORKIVA_READ_SCOPE_FILE" not in os.environ):
+        return None
+    try:
+        scope = json.loads(pathlib.Path(os.environ["WORKIVA_READ_SCOPE_FILE"]).read_text(encoding="utf-8"))
+        kinds = {"documents", "spreadsheets", "tables", "destinationLinks", "sourceLinks", "anchors"}
+        if (not isinstance(scope, dict) or set(scope) - kinds
+                or any(not isinstance(ids, list) or any(not isinstance(i, str) or not i for i in ids)
+                       for ids in scope.values()) or not any(scope.values())):
+            raise ValueError()
+        return scope
+    except (OSError, ValueError, TypeError, KeyError):
+        raise ReadScopeError("A valid WORKIVA_READ_SCOPE_FILE is required for private Workiva reads") from None
+
+
+def read_access_status():
+    """Redacted configuration facts, not authentication or permission proof."""
+    try:
+        scope = "unrestricted" if _read_scope() is None else "valid"
+    except ReadScopeError:
+        scope = "invalid" if os.environ.get("WORKIVA_READ_SCOPE_FILE") else "missing"
+    return {"workivaReadScope": scope,
+            "workivaAccountPin": "present" if os.environ.get("WORKIVA_EXPECTED_ARID", "").strip() else "missing"}
+
+
+def assert_read_configuration():
+    scope = _read_scope()
+    if scope is not None and not os.environ.get("WORKIVA_EXPECTED_ARID", "").strip():
+        raise AuthError("Scoped Workiva reads require WORKIVA_EXPECTED_ARID")
+    return scope
+
+
+def _assert_read_scope(url):
+    target, base = urllib.parse.urlsplit(url), urllib.parse.urlsplit(_base())
+    if (target.scheme, target.netloc) != (base.scheme, base.netloc) or target.fragment:
+        raise ReadScopeError("Untrusted Workiva read URL")
+    scope = assert_read_configuration()
+    if scope is None:
+        return
+    try:
+        decoded = urllib.parse.unquote(target.path)
+        if ("\\" in decoded or "%" in decoded
+                or any(part in (".", "..") for part in decoded.split("/"))):
+            raise ValueError()
+        match = re.match(r"^/(?:platform/v1/)?(documents|spreadsheets)/([^/]+)(?:/|$)", target.path)
+        match = match or re.match(r"^/content/(tables|destinationLinks|sourceLinks|anchors)/([^/]+)(?:/|$)", target.path)
+        if not match or urllib.parse.unquote(match[2]) not in scope.get(match[1], []):
+            raise ValueError()
+    except (OSError, ValueError, TypeError):
+        raise ReadScopeError("Workiva read is outside the configured sandbox scope, or the scope file is invalid") from None
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # Do not forward OAuth credentials or bearer tokens, or bypass the scope
+        # check through a same-host redirect to an unapproved resource.
+        return None
+
+
+def _open(request, ctx, timeout):
+    opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx), _NoRedirect())
+    return opener.open(request, timeout=timeout)
+
+
 def get_token(ctx=None):
+    assert_read_configuration()  # Refuse incomplete commissioning before OAuth.
     ctx = ctx or _ssl_context()
     cid, sec = _resolve_credentials()
     form = urllib.parse.urlencode({"grant_type": "client_credentials", "client_id": cid, "client_secret": sec}).encode()
     req = urllib.request.Request(_base() + AUTH_PATH, data=form,
                                  headers={"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"}, method="POST")
-    return json.loads(urllib.request.urlopen(req, context=ctx, timeout=30).read())["access_token"]
+    with _open(req, ctx, 30) as response:
+        return json.load(response)["access_token"]
 
 
 def _get(path, token, ctx, version=None):
     # Content API endpoints are versioned via the X-Version header (NOT workiva-api-version);
     # platform/v1 endpoints take no version header. Pass version only for content calls.
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-    if version:
-        headers["X-Version"] = version
-    req = urllib.request.Request(_base() + path, headers=headers)
-    return json.loads(urllib.request.urlopen(req, context=ctx, timeout=60).read())
+    return _get_url(path, token, ctx, version)
 
 
 def _get_url(url, token, ctx, version=None):
     """GET an absolute URL (e.g. an `@nextLink`). Workiva returns @nextLink as a full URL; a
     relative path is tolerated by prefixing the region base."""
     full = url if url.startswith("http") else _base() + url
+    _assert_read_scope(full)
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     if version:
         headers["X-Version"] = version
     req = urllib.request.Request(full, headers=headers)
-    return json.loads(urllib.request.urlopen(req, context=ctx, timeout=60).read())
+    with _open(req, ctx, 60) as response:
+        return json.load(response)
 
 
 def get_sheetdata(spreadsheet_id, sheet_id, token, ctx):

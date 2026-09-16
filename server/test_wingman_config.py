@@ -14,9 +14,9 @@ class WingmanConfigTests(unittest.TestCase):
         self.assertIn("junk-decimal", wingman_config.SAFE_FIX_KINDS)
         self.assertIn("missing-thousands-separator", wingman_config.SAFE_FIX_KINDS)
         self.assertIn("prefix-mismatch", wingman_config.SAFE_FIX_KINDS)
-        self.assertIn("zero-display-mismatch", wingman_config.SAFE_FIX_KINDS)
+        self.assertNotIn("zero-display-mismatch", wingman_config.SAFE_FIX_KINDS)
         self.assertIn("year-automatic-coercion", wingman_config.SAFE_FIX_KINDS)
-        self.assertEqual(len(wingman_config.SAFE_FIX_KINDS), 10)
+        self.assertEqual(len(wingman_config.SAFE_FIX_KINDS), 9)
 
     def test_service_config_acfr_preset(self):
         cfg = wingman_config.service_config()

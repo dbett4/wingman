@@ -349,3 +349,125 @@ def test_historical_source_never_substitutes_latest_or_another_table(monkeypatch
         assert data["source"]["values"]["groups"] == []
     assert len(calls) == (1 if fault in ("denied", "properties-id", "properties-revision") else 2)
     assert "sensitive" not in json.dumps(data)
+
+
+@pytest.mark.parametrize("fault", [None, "no-hint", "no-sheet", "denied", "sheet-id", "file-revision", "table-id", "table-revision"])
+def test_source_workbook_hint_requires_revision_bound_membership(monkeypatch, fault):
+    calls = []
+
+    def read(path, token, ctx, version=None):
+        calls.append(path)
+        assert version == "2026-01-01"
+        url = urlsplit(path)
+        query = parse_qs(url.query)
+        assert query["$revision"] == ["source-rev-3"]
+        if url.path == "/spreadsheets/candidate-book/sheets/source-sheet":
+            if fault == "denied":
+                raise PermissionError("private upstream body")
+            return {"id": "other-sheet" if fault == "sheet-id" else "source-sheet",
+                    "revision": "latest" if fault == "file-revision" else "source-rev-3",
+                    "table": {"table": "other-table" if fault == "table-id" else "source-table",
+                              "revision": "latest" if fault == "table-revision" else "source-rev-3"}}
+        if url.path == "/spreadsheets/candidate-book/sheets":
+            assert fault is None, "An unproven workbook must not resolve named-sheet formulas"
+            return {"data": [{"name": "Supporting notes", "table": {
+                "table": "notes-table", "revision": "source-rev-3"}}]}
+        table = url.path.split("/")[3]
+        assert table in ("source-table", "notes-table")
+        if url.path.endswith("/properties"):
+            props = {"id": table, "revision": "source-rev-3", "name": table}
+            if fault != "no-sheet":
+                props["sheet"] = "source-sheet"
+            return props
+        assert url.path.endswith("/cells")
+        bounds = {k: int(query[k][0]) for k in ("startRow", "stopRow", "startColumn", "stopColumn")}
+        if table == "source-table":
+            assert bounds == {"startRow": 11, "stopRow": 11, "startColumn": 2, "stopColumn": 2}
+            value = {"type": "formula", "formula": "='Supporting notes'!$D$9"}
+        else:
+            assert fault is None
+            assert bounds == {"startRow": 8, "stopRow": 8, "startColumn": 3, "stopColumn": 3}
+            value = 313
+        return {"revision": "source-rev-3", "range": bounds, "data": [{"cells": [{"value": value}]}]}
+
+    monkeypatch.setattr(inspector.wk, "_get", read)
+    monkeypatch.setattr(inspector.wk, "_get_url", read)
+    data = inspector.inspect_source("source-table", "source-rev-3", "C12", "synthetic", None,
+                                    workbook_hint=None if fault == "no-hint" else "candidate-book")
+    assert data["content"]["formula"] == "='Supporting notes'!$D$9"
+    group, = data["source"]["values"]["groups"]
+    if fault is None:
+        assert data["location"] == {"status": "observed", "spreadsheetId": "candidate-book",
+                                    "sheetId": "source-sheet", "revision": "source-rev-3"}
+        assert group["status"] == "observed" and group["tableId"] == "notes-table"
+        assert group["cells"][0]["addr"] == "D9" and group["cells"][0]["content"]["value"] == 313
+    else:
+        assert data["location"] == {"status": "not_inspected" if fault == "no-hint" else "unavailable"}
+        assert group["status"] == "unavailable" and "cells" not in group
+        assert "workbook identity" in group["reason"]
+    assert len(calls) == (6 if fault is None else 2 if fault in ("no-hint", "no-sheet") else 3)
+    assert data["nativeFormat"]["status"] == data["source"]["rangeLinks"]["status"] == "not_inspected"
+    assert "private upstream body" not in json.dumps(data)
+
+
+def test_document_catalog_and_cell_use_real_http(browser):
+    catalog = browser.request("/api/document-tables?documentId=de10&sectionId=de11")
+    assert catalog["status"] == "observed" and catalog["revision"] == "demo-report-5"
+    assert catalog["tables"] == [{"tableId": "demo-report-table", "name": "Reporting period"}]
+    empty = browser.request("/api/document-tables?documentId=de10&sectionId=de13")
+    assert empty["status"] == "observed" and empty["tables"] == []
+    data = browser.request("/api/inspect-document?documentId=de10&sectionId=de11"
+                           "&tableId=demo-report-table&revision=demo-report-5&addr=B2")
+    assert data["content"]["value"] == "2025" and data["content"]["kind"] == "linked_value"
+    assert data["source"]["values"]["groups"][0]["cells"][0]["addr"] == "D6"
+    assert data["source"]["values"]["groups"][0]["cells"][0]["content"]["value"] == "2024"
+    assert data["target"] == {"documentId": "de10", "sectionId": "de11", "tableId": "demo-report-table",
+                              "revision": "demo-report-5", "addr": "B2"}
+    assert data["readOnly"] and data["sourceValuesRequested"]
+    assert data["nativeFormat"]["status"] == "not_inspected"
+    assert browser.state()["events"] == []
+
+
+@pytest.mark.parametrize("fault", [None, "denied", "list-revision", "pagination", "section-id",
+                                   "section-revision", "body-revision", "duplicate", "parent", "foreign-table", "cell-revision"])
+def test_document_membership_never_guesses_or_reads_latest(monkeypatch, fault):
+    from demo import Workbook
+    book = Workbook()
+    calls = []
+
+    def read(path, token, ctx, version=None):
+        calls.append(path)
+        assert version == "2026-01-01"
+        query = parse_qs(urlsplit(path).query)
+        assert query["$revision"]  # Every membership and content read is pinned.
+        if fault == "denied":
+            raise PermissionError("private upstream secret")
+        result = book.request("GET", path, None)
+        if "/documents/" in path:
+            assert query["$revision"] == ["demo-report-5"]
+        if "/tables?" in path:
+            if fault == "list-revision": result["revision"] = "latest"
+            if fault == "pagination": result["@nextLink"] = "https://untrusted.invalid/private"
+            if fault == "duplicate": result["data"].append(copy.deepcopy(result["data"][1]))
+            if fault == "parent": result["data"][1]["parent"]["richText"] = "another-section-body"
+        if "/sections/" in path:
+            if fault == "section-id": result["id"] = "de12"
+            if fault == "section-revision": result["revision"] = "latest"
+            if fault == "body-revision": result["body"]["revision"] = "latest"
+        if fault == "cell-revision" and "/demo-report-table/cells?" in path:
+            result["revision"] = "latest"
+        return result
+
+    monkeypatch.setattr(inspector.wk, "_get", read)
+    monkeypatch.setattr(inspector.wk, "_get_url", read)
+    table = "demo-other-report-table" if fault == "foreign-table" else "demo-report-table"
+    data = inspector.inspect_document("de10", "de11", table, "demo-report-5", "B2", "fictional", None)
+    if fault is None:
+        assert data["content"]["value"] == "2025"
+        assert data["source"]["cellLink"]["sourceCell"] == "D6"
+    else:
+        assert data["status"] == "unavailable" and "content" not in data
+        if fault != "cell-revision":
+            assert all(path.startswith("/documents/") for path in calls)
+    assert "private upstream" not in json.dumps(data)
+    assert book.events == []

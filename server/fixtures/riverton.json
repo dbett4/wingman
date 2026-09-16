@@ -2,6 +2,19 @@
   "name": "City of Riverton · FY2025 review",
   "spreadsheetId": "de00",
   "notice": "Fictional data. Formula results are seeded, not recalculated. No Workiva connection.",
+  "document": {
+    "id": "de10",
+    "revision": "demo-report-5",
+    "sections": [
+      {"id": "de11", "name": "Report overview", "body": {"richText": "demo-report-body", "revision": "demo-report-5"}},
+      {"id": "de12", "name": "Membership", "body": {"richText": "demo-members-body", "revision": "demo-report-5"}},
+      {"id": "de13", "name": "Narrative", "body": {"richText": "demo-narrative-body", "revision": "demo-report-5"}}
+    ],
+    "tables": [
+      {"id": "demo-other-report-table", "name": "Membership", "parent": {"type": "richText", "richText": "demo-members-body"}},
+      {"id": "demo-report-table", "name": "Reporting period", "parent": {"type": "richText", "richText": "demo-report-body"}}
+    ]
+  },
   "sheets": [
     {
       "id": "de01",
@@ -52,6 +65,14 @@
   ],
   "cellDestinationLinks": [
     {
+      "id": "demo-report-year-link", "revision": "demo-report-5", "status": "connected",
+      "content": {"type": "table", "table": "demo-report-table"},
+      "source": {"type": "anchor", "anchor": {
+        "anchor": "demo-year-anchor", "revision": "demo-published-3",
+        "content": {"type": "table", "table": "demo-notes-table"}
+      }}
+    },
+    {
       "id": "demo-year-cell-link", "revision": "demo-link-2", "status": "connected",
       "content": {"type": "table", "table": "de02"},
       "source": {"type": "anchor", "anchor": {
@@ -77,19 +98,27 @@
     {
       "id": "demo-year-anchor", "revision": "demo-published-3",
       "content": {"type": "table", "table": "demo-notes-table"},
-      "attachmentPoint": {"type": "tableRange", "range": {
+      "attachmentPoint": {"type": "tableRange", "tableRange": {"range": {
         "startRow": 5, "stopRow": 5, "startColumn": 3, "stopColumn": 3
-      }}
+      }}}
     },
     {
       "id": "demo-support-anchor", "revision": "demo-support-2",
       "content": {"type": "table", "table": "demo-year-support"},
-      "attachmentPoint": {"type": "tableRange", "range": {
+      "attachmentPoint": {"type": "tableRange", "tableRange": {"range": {
         "startRow": 10, "stopRow": 10, "startColumn": 4, "stopColumn": 4
-      }}
+      }}}
     }
   ],
   "publishedTables": {
+    "demo-report-table": {
+      "name": "Reporting period",
+      "revision": "demo-report-5",
+      "startRow": 0,
+      "startColumn": 0,
+      "cellLinks": {"B2": {"destinationLink": "demo-report-year-link", "revision": "demo-report-5"}},
+      "rows": [["PERIOD", ""], ["Fiscal year", 2025], ["Basis", "Accrual"]]
+    },
     "demo-notes-table": {
       "name": "Published reporting notes",
       "revision": "demo-published-3",

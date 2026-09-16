@@ -267,6 +267,22 @@ class FormatLaneTests(unittest.TestCase):
         self.assertEqual(out[0]["fix_lane"], "safe-auto")
         self.assertEqual(out[0]["target"]["valueFormat"]["displayZeroAs"], "EM DASH")
 
+    def test_zero_display_is_disabled_even_with_neighbor_agreement(self):
+        zero = {"addr": "K10", "calculatedValue": "0", "valueFormat": _accounting_vf()}
+        # Keep the low-level legacy behavior visible: the product entry point,
+        # not a demo filter, must suppress this unsupported convention judgment.
+        self.assertIsNotNone(fl.detect_zero_display_mismatch(zero))
+        for display in ("EM DASH", "ZERO"):
+            with self.subTest(display=display):
+                vf = _accounting_vf(displayZeroAs=display)
+                cells = [zero, {"addr": "K9", "calculatedValue": "17", "valueFormat": vf},
+                         {"addr": "K11", "calculatedValue": "83", "valueFormat": vf}]
+                self.assertNotIn("zero-display-mismatch", {f["kind"] for f in fl.detectors.scan_cells(cells)})
+                groups = [{"kind": "zero-display-mismatch", "fix_lane": "surfaced", "addrs": ["K10"]}]
+                fl.attach_gated_format_targets(groups, cells)
+                self.assertNotIn("gated_target", groups[0])
+                self.assertNotIn("gated_columns", groups[0])
+
     def test_column_majority_format_picks_dominant(self):
         vf = _accounting_vf(prefix="$")
         cells = [

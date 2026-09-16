@@ -285,19 +285,22 @@ def cell_destination():
                 "anchor": "source-anchor", "revision": "source-3", "content": {"type": "table", "table": "upstream-table"}}}}
 
 
-def cell_anchor():
+def cell_anchor(nested=True):
+    attachment = {"range": {
+        "startRow": 10, "stopRow": 10, "startColumn": 4, "stopColumn": 4}}
     return {"id": "source-anchor", "revision": "source-3", "content": {"type": "table", "table": "upstream-table"},
-            "attachmentPoint": {"type": "tableRange", "range": {
-                "startRow": 10, "stopRow": 10, "startColumn": 4, "stopColumn": 4}}}
+            "attachmentPoint": {"type": "tableRange", **({"tableRange": attachment} if nested else attachment)}}
 
 
 def trace_cell():
     return sources.cell_link(linked_content(), "table-c", "synthetic-token", None)
 
 
-def test_cell_link_follows_ids_and_each_recorded_revision_not_range_offsets(transport):
+@pytest.mark.parametrize("nested", [True, False])
+def test_cell_link_follows_ids_and_each_recorded_revision_not_range_offsets(transport, nested):
     responses, calls = transport
-    responses.extend([cell_destination(), cell_anchor()])
+    # Native API shape and the flattened shape in the published endpoint example.
+    responses.extend([cell_destination(), cell_anchor(nested)])
     link = trace_cell()
     assert link == {"status": "observed", "resolution": "observed", "linkState": "connected",
                     "id": "cell-link", "revision": "link-4", "sourceCell": "E11",
@@ -359,7 +362,7 @@ def test_cell_anchor_failure_preserves_connected_status_not_a_false_source(trans
     anchor = cell_anchor()
     if fault == "table": anchor["content"]["table"] = "foreign-table"
     elif fault == "type": anchor["attachmentPoint"]["type"] = "richTextSelection"
-    elif fault == "range": anchor["attachmentPoint"]["range"]["stopColumn"] = 5
+    elif fault == "range": anchor["attachmentPoint"]["tableRange"]["range"]["stopColumn"] = 5
     elif fault == "denied": anchor = PermissionError("sensitive upstream detail")
     else: anchor[fault] = "unexpected"
     responses.extend([cell_destination(), anchor])

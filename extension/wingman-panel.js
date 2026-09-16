@@ -1186,8 +1186,53 @@
     if (open && !connectionOpen && activeTab === "inspect" && panelUi) paintInspection();
   }
   function paintInspection() {
-    WingmanInspector.render(panelUi.body, inspectContext || currentInspection(), inspectState, inspectSelectedCell,
-      followInspectionSource, returnInspection);
+    var context = inspectContext || currentInspection();
+    if (context.document && inspectState.chosen) context = Object.assign({}, context, {target: inspectState.chosen});
+    WingmanInspector.render(panelUi.body, context, inspectState, inspectSelectedCell,
+      followInspectionSource, returnInspection, {load: loadDocumentTables, choose: chooseDocumentCell});
+  }
+  function loadDocumentTables() {
+    if (!guardExtensionContext()) return;
+    syncInspection();
+    var target = inspectContext.document;
+    if (!target) return;
+    var request = ++inspectRequest;
+    inspectState = {loading: true};
+    paintInspection();
+    function finish(state) {
+      clearTimeout(timer);
+      syncInspection();
+      if (extensionInvalidated || !open || connectionOpen || activeTab !== "inspect" || request !== inspectRequest) return;
+      inspectRequest++;
+      inspectState = state;
+      paintInspection();
+    }
+    var timer = setTimeout(function () { finish({error: "Table read timed out. Retry when ready; late replies are ignored."}); }, 30000);
+    svc("/api/document-tables?documentId=" + encodeURIComponent(target.documentId) + "&sectionId=" + encodeURIComponent(target.sectionId),
+      {cache: "no-store"}).then(function (data) {
+      if (!data.target || data.target.documentId !== target.documentId || data.target.sectionId !== target.sectionId ||
+          data.readOnly !== true || data.status !== "observed" || !data.revision || !Array.isArray(data.tables)) {
+        throw new Error("Document table metadata unavailable");
+      }
+      finish({catalog: data});
+    }).catch(function () { finish({error: "Could not verify the tables in this section. Check the connection and retry. No cell read."}); });
+  }
+  function chooseDocumentCell(choice) {
+    syncInspection();
+    if (!inspectContext.document) return;
+    var catalog = inspectState.catalog;
+    if (choice && (!catalog || choice.revision !== catalog.revision || !/^[A-Z]{1,3}[1-9][0-9]{0,6}$/.test(choice.addr) ||
+        !catalog.tables.some(function (table) { return table.tableId === choice.tableId; }))) return;
+    inspectRequest++;
+    var stopped = inspectState.loading || inspectState.traceLoading;
+    inspectState = {catalog: catalog};
+    if (choice) {
+      inspectState.chosen = Object.assign({}, inspectContext.document, choice);
+      inspectSelectedCell(true);
+    } else {
+      if (stopped) inspectState.error = "Stopped waiting. Any late reply will be ignored.";
+      paintInspection();
+    }
   }
   function returnInspection(depth) {
     syncInspection();
@@ -1212,6 +1257,8 @@
     var query = ["tableId", "revision", "addr"].map(function (key) {
       return key + "=" + encodeURIComponent(target[key]);
     }).join("&");
+    // Candidate only: the server must prove ownership at the source revision.
+    if (inspectContext.target && inspectContext.target.spreadsheetId) query += "&workbookHint=" + encodeURIComponent(inspectContext.target.spreadsheetId);
     function stillCurrent() {
       syncInspection();
       return !extensionInvalidated && open && !connectionOpen && activeTab === "inspect" && request === inspectRequest;
@@ -1245,32 +1292,44 @@
     readSources = readSources === true;
     if (!guardExtensionContext()) return;
     syncInspection();
-    var target = inspectContext.target;
+    var target = inspectContext.target || inspectState.chosen;
     if (!target) return;
+    var documentCell = !!target.documentId;
+    if (documentCell) readSources = true;
+    var retained = documentCell ? {catalog: inspectState.catalog, chosen: target} : {};
     var request = ++inspectRequest;
-    inspectState = { loading: true, sources: readSources };
+    inspectState = Object.assign({}, retained, { loading: true, sources: readSources });
     paintInspection();
-    var query = ["spreadsheetId", "sheetId", "addr"].map(function (k) {
+    var fields = documentCell ? ["documentId", "sectionId", "tableId", "revision", "addr"] : ["spreadsheetId", "sheetId", "addr"];
+    var query = fields.map(function (k) {
       return k + "=" + encodeURIComponent(target[k]);
     }).join("&");
-    if (readSources) query += "&sources=true";
+    if (readSources && !documentCell) query += "&sources=true";
     function stillCurrent() {
       syncInspection();
       return !extensionInvalidated && open && !connectionOpen && activeTab === "inspect" && request === inspectRequest;
     }
-    svc("/api/inspect?" + query, { cache: "no-store" }).then(function (data) {
+    var timer = documentCell ? setTimeout(function () {
+      if (!stillCurrent()) return;
+      inspectRequest++;
+      inspectState = Object.assign({}, retained, {error: "Cell read timed out. Retry or choose another cell; late replies are ignored."});
+      paintInspection();
+    }, 30000) : null;
+    svc((documentCell ? "/api/inspect-document?" : "/api/inspect?") + query, { cache: "no-store" }).then(function (data) {
       if (!stillCurrent()) return;
       if (!WingmanInspector.matches(target, data.target) || data.readOnly !== true ||
-          (data.sourceValuesRequested === true) !== readSources) {
+          (data.sourceValuesRequested === true) !== readSources ||
+          (documentCell && data.content && data.content.status === "observed" &&
+            (data.tableId !== target.tableId || data.contentRevision !== target.revision))) {
         throw new Error("The response did not match the selected cell. No evidence displayed.");
       }
-      inspectState = { data: data, sources: readSources };
+      inspectState = Object.assign({}, retained, { data: data, sources: readSources });
       paintInspection();
     }).catch(function (error) {
       if (!stillCurrent()) return;
-      inspectState = { error: error.offline ? "Wingman service is unavailable. No cell was inspected." : error.message };
+      inspectState = Object.assign({}, retained, { error: error.offline ? "Wingman service is unavailable. No cell was inspected." : error.message });
       paintInspection();
-    });
+    }).finally(function () { clearTimeout(timer); });
   }
 
   function setActiveTab(tabId) {

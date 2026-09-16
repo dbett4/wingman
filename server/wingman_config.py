@@ -16,7 +16,6 @@ SAFE_FIX_KINDS: tuple[str, ...] = (
     "number-on-accounting-column",
     "precision-mismatch",
     "prefix-mismatch",
-    "zero-display-mismatch",
     "year-automatic-coercion",
 )
 

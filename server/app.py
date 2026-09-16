@@ -76,10 +76,21 @@ _tables = {}  # (ss, sheetId) -> tableId, cached per process
 
 def _token():
     with _tok_lock:
-        if not _tok["value"] or (time.time() - _tok["ts"]) > 480:  # token lives 600s; refresh at 480
-            _tok["value"] = wk.get_token(_ctx)
+        wk.assert_read_configuration()
+        refresh = not _tok["value"] or (time.time() - _tok["ts"]) > 480
+        candidate = wk.get_token(_ctx) if refresh else _tok["value"]
+        expected = os.environ.get("WORKIVA_EXPECTED_ARID", "").strip()
+        if expected:
+            try:
+                matches = fixer.token_arid(candidate) == expected
+            except Exception:
+                matches = False
+            if not matches:
+                raise wk.AuthError("Workiva token does not match the configured workspace; no data read")
+        if refresh:  # token lives 600s; cache only a verified refresh
+            _tok["value"] = candidate
             _tok["ts"] = time.time()
-        return _tok["value"]
+        return candidate
 
 
 def _table_id(ss, sheet_id):
@@ -147,10 +158,9 @@ def _api_error_payload(exc):
     if "NO_CREDENTIALS" in msg:
         return {
             "error": (
-                "Workiva credentials missing — set WORKIVA_CLIENT_ID + WORKIVA_CLIENT_SECRET "
-                "in the service environment (or a .env in the working directory)"
+                "Workiva credentials unavailable — check the configured service credential file "
+                "or WORKIVA_CLIENT_ID + WORKIVA_CLIENT_SECRET in the service environment"
             ),
-            "detail": msg,
         }
     if "HTTPError 404" in msg or "404: 'Not Found'" in msg:
         return {
@@ -368,6 +378,7 @@ def _operator_config_status():
     """
     token_configured = bool(WINGMAN_TOKEN)
     ext_custom = bool(os.environ.get("WINGMAN_EXT_ID"))
+    credentials = wk.credentials_present()
     warnings = []
     if not token_configured:
         warnings.append("WINGMAN_TOKEN is missing; guarded endpoints are disabled. Run ./setup.sh.")
@@ -377,8 +388,8 @@ def _operator_config_status():
         "wingman_token": "configured" if token_configured else "missing",
         "extension_origin": "custom" if ext_custom else "default-packaged",
         "allowed_extension_ids_count": len([x for x in ALLOWED_EXT_IDS if x]),
-        "workiva_client_id": "present" if os.environ.get("WORKIVA_CLIENT_ID") else "missing",
-        "workiva_client_secret": "present" if os.environ.get("WORKIVA_CLIENT_SECRET") else "missing",
+        "workiva_client_id": "present" if credentials else "missing",
+        "workiva_client_secret": "present" if credentials else "missing",
         "workiva_expected_arid": "present" if os.environ.get("WORKIVA_EXPECTED_ARID") else "missing",
         "apply_safety_config": "present" if _load_json_file(_configured_safety_json_path()) is not None else "missing",
         "apply_allowlist_count": len(_apply_allowlist_ids()),
@@ -498,8 +509,8 @@ class Handler(BaseHTTPRequestHandler):
                     "service": "wingman", "protocol": 1, "readOnly": True,
                     "authorization": "accepted", "workivaAccess": "not_tested",
                     "serviceMode": "read-only" if wingman_config.read_only_enabled() else "standard",
-                    "workivaCredentials": "present" if all(os.environ.get(k) for k in
-                        ("WORKIVA_CLIENT_ID", "WORKIVA_CLIENT_SECRET")) else "missing",
+                    "workivaCredentials": "present" if wk.credentials_present() else "missing",
+                    **wk.read_access_status(),
                 })
             elif path == "/version":
                 self._send(200, {"build": _ext_build()})  # dev auto-reload signal
@@ -520,14 +531,38 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/inspect-source":
                 try:
                     q = urllib.parse.parse_qs(u.query, keep_blank_values=True)
-                    if set(q) != {"tableId", "revision", "addr"} or any(len(v) != 1 for v in q.values()):
-                        raise ValueError("Exactly one tableId, revision and addr required")
+                    required = {"tableId", "revision", "addr"}
+                    if (not required <= set(q) or set(q) - required - {"workbookHint"}
+                            or any(len(v) != 1 for v in q.values())):
+                        raise ValueError("Exactly one tableId, revision and addr, and at most one workbookHint required")
                     table, revision, addr = (q[key][0] for key in ("tableId", "revision", "addr"))
-                    inspector.validate_source_target(table, revision, addr)
+                    workbook_hint = q.get("workbookHint", [None])[0]
+                    inspector.validate_source_target(table, revision, addr, workbook_hint)
                 except ValueError as exc:
                     self._send(400, {"error": str(exc)})
                     return
-                self._send(200, inspector.inspect_source(table, revision, addr, _token(), _ctx))
+                self._send(200, inspector.inspect_source(table, revision, addr, _token(), _ctx,
+                                                        workbook_hint=workbook_hint))
+            elif path in ("/api/document-tables", "/api/inspect-document"):
+                try:
+                    q = urllib.parse.parse_qs(u.query, keep_blank_values=True)
+                    required = {"documentId", "sectionId"}
+                    if path == "/api/inspect-document":
+                        required |= {"tableId", "revision", "addr"}
+                    if set(q) != required or any(len(v) != 1 for v in q.values()):
+                        raise ValueError("Exactly one of each document target field is required")
+                    document, section = (q[key][0] for key in ("documentId", "sectionId"))
+                    inspector.validate_target(document, section, q.get("addr", ["A1"])[0])
+                    if path == "/api/inspect-document":
+                        table, revision, addr = (q[key][0] for key in ("tableId", "revision", "addr"))
+                        inspector.validate_source_target(table, revision, addr)
+                except ValueError as exc:
+                    self._send(400, {"error": str(exc)})
+                    return
+                data = (inspector.document_tables(document, section, _token(), _ctx)
+                        if path == "/api/document-tables" else
+                        inspector.inspect_document(document, section, table, revision, addr, _token(), _ctx))
+                self._send(200, data)
             elif path == "/scan":
                 ss = q.get("spreadsheetId", [""])[0]
                 sh = q.get("sheetId", [""])[0]

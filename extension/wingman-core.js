@@ -739,7 +739,6 @@
     "number-on-accounting-column": true,
     "precision-mismatch": true,
     "prefix-mismatch": true,
-    "zero-display-mismatch": true,
     "negative-without-parens": true,
   };
 

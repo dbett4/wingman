@@ -10,6 +10,7 @@ from pathlib import Path
 import shutil
 import sys
 import threading
+import time
 
 import pytest
 from playwright.sync_api import expect, sync_playwright
@@ -35,6 +36,9 @@ def test_installed_connection(tmp_path, monkeypatch, token):
     requests = []
     delay = threading.Event()
     released = threading.Event()
+    document_delay = threading.Event()
+    document_released = threading.Event()
+    document_sent = threading.Event()
 
     class Handler(app.Handler):
         # No keep-alive threads may outlive shutdown during the offline assertion.
@@ -48,6 +52,11 @@ def test_installed_connection(tmp_path, monkeypatch, token):
             if self.path == "/api/connection" and delay.is_set():
                 released.wait(15)
                 self.close_connection = True
+                return
+            if self.path.startswith(("/api/inspect-document?", "/api/document-tables?")) and document_delay.is_set():
+                document_released.wait(45)
+                super().do_GET()
+                document_sent.set()
                 return
             super().do_GET()
 
@@ -78,7 +87,7 @@ def test_installed_connection(tmp_path, monkeypatch, token):
                       "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"],
             )
             try:
-                page_url = "https://app.wdesk.com/a/fictional-workspace/spreadsheet/abc123/sheet/def456"
+                page_url = "https://app.wdesk.com/a/fictional-workspace/spreadsheet/abc123/-1/sheet/def456"
 
                 def route_request(route):
                     if route.request.url == page_url:
@@ -96,9 +105,19 @@ def test_installed_connection(tmp_path, monkeypatch, token):
                 context.route("**/*", route_request)
                 errors = []
                 worker = context.service_workers[0] if context.service_workers else context.wait_for_event("serviceworker")
-                setup = context.new_page()
+                setup_url = worker.url.rsplit("/", 1)[0] + "/" + manifest["options_ui"]["page"]
+                # Chrome reuses its options tab. A manual goto can race the
+                # onInstalled openOptionsPage navigation to that same tab.
+                worker.evaluate("() => chrome.runtime.openOptionsPage()")
+                # The API acknowledges tab creation before Playwright sees its URL.
+                deadline = time.monotonic() + 10
+                setup = None
+                while setup is None and time.monotonic() < deadline:
+                    setup = next((page for page in context.pages if page.url == setup_url), None)
+                    if setup is None:
+                        context.pages[0].wait_for_timeout(50)
+                assert setup is not None, "Chrome did not open the extension options page"
                 setup.on("pageerror", lambda error: errors.append(str(error)))
-                setup.goto(worker.url.rsplit("/", 1)[0] + "/" + manifest["options_ui"]["page"])
                 setup_title = setup.locator(".wc-status h3")
                 expect(setup_title).to_have_text("Not checked")
                 assert not [r for r in requests if r[0] != "/version"]
@@ -264,6 +283,154 @@ def test_installed_connection(tmp_path, monkeypatch, token):
                     assert all(paired and (path == "/version" or path.startswith(("/api/inspect?", "/api/inspect-source?")))
                                for path, paired in requests)
                     assert sum(path.startswith("/api/inspect-source?") for path, _ in requests) == 2
+                    assert all("workbookHint=de00" in path for path, _ in requests if path.startswith("/api/inspect-source?"))
+
+                    # A source in the opened workbook gains context only after the
+                    # real handler checks revision-bound sheet/table membership.
+                    page_url = page_url.replace("de02", "de01")
+                    page.goto(page_url)
+                    page.locator(".dt-formula-cell-indicator").evaluate("e=>e.textContent='B7'")
+                    page.locator(".wm-pill").click()
+                    expect(page.locator(".wi-address")).to_have_text("B7")
+                    page.locator(".wi-inspect").click()
+                    expect(page.locator(".wi-evidence dd").first).to_have_text("=SUM(B3:B6)+12500")
+                    page.locator(".wi-sources > summary").click()
+                    page.locator(".wi-read-sources").click()
+                    page.locator(".wi-follow").first.click()
+                    expect(page.locator(".wi-address")).to_have_text("B3")
+                    page.get_by_text("Context & raw format", exact=True).click()
+                    location = page.get_by_text("Matched at the recorded revision. Workiva selection has not moved.", exact=True)
+                    expect(location).to_be_visible()
+                    location.scroll_into_view_if_needed()
+                    capture("source-location-narrow")
+                    assert page.locator(".wi-inspector").evaluate("e=>e.scrollWidth<=e.clientWidth")
+                    page.set_viewport_size({"width": 1280, "height": 900})
+                    location.scroll_into_view_if_needed()
+                    page.locator(".wm-panel").screenshot(path=str(tmp_path / "source-location-panel.png"))
+                    before_return = book.request_count
+                    page.locator(".wi-inspect").click()
+                    expect(page.locator(".wi-address")).to_have_text("B7")
+                    assert book.request_count == before_return and book.events == []
+
+                    # Document choice uses native-shaped URLs but fictional data.
+                    # No cell address is supplied by the host page in this flow.
+                    requests.clear()
+                    page_url = "https://app.wdesk.com/a/fictional-workspace/doc/de10/r/-1/v/1/sec/de11"
+                    page.goto(page_url)
+                    page.locator(".dt-formula-cell-indicator").evaluate("e=>e.remove()")
+                    page.locator(".wm-pill").click()
+                    expect(page.locator(".wi-doc-heading")).to_have_text("Inspect a report table")
+                    assert all(path == "/version" for path, _ in requests)
+                    page.locator(".wi-doc-load").click()
+                    expect(page.get_by_role("combobox", name="Table", exact=True)).to_be_visible()
+                    assert page.locator(".wi-doc-table option").all_text_contents() == ["Choose a table", "1. Reporting period"]
+                    page.get_by_role("combobox", name="Table", exact=True).select_option("demo-report-table")
+                    page.get_by_label("Cell address", exact=True).fill("b2")
+                    page.locator(".wm-panel").screenshot(path=str(tmp_path / "document-choice-light.png"))
+                    page.locator('[title^="Theme:"]').click()
+                    page.locator(".wm-panel").screenshot(path=str(tmp_path / "document-choice-dark.png"))
+                    page.set_viewport_size({"width": 390, "height": 844})
+                    page.get_by_role("button", name="Inspect cell & direct sources", exact=True).scroll_into_view_if_needed()
+                    capture("document-choice-narrow")
+                    assert page.locator(".wi-inspector").evaluate("e=>e.scrollWidth<=e.clientWidth")
+                    assert page.locator(".wi-doc-form input,.wi-doc-form select,.wi-doc-form button,.wi-doc-load").evaluate_all(
+                        "els=>els.every(e=>e.getBoundingClientRect().height>=40)")
+                    page.get_by_text("Context & revision", exact=True).click()
+                    expect(page.locator(".wi-evidence")).to_contain_text("demo-report-5")
+                    page.locator(".wi-evidence").scroll_into_view_if_needed()
+                    capture("document-context-narrow")
+                    page.get_by_text("Context & revision", exact=True).click()
+                    page.get_by_label("Cell address", exact=True).press("Enter")
+                    expect(page.locator(".wi-evidence dd").first).to_have_text("2025")
+                    expect(page.locator(".wi-inspector")).to_contain_text("Explicit table-cell choice")
+                    page.locator(".wi-follow").first.click()
+                    expect(page.locator(".wi-address")).to_have_text("D6")
+                    page.locator(".wi-follow").first.click()
+                    expect(page.locator(".wi-address")).to_have_text("E11")
+                    expect(page.locator(".wi-trail")).to_have_text("Chosen B2→D6→E11")
+                    page.set_viewport_size({"width": 1280, "height": 900})
+                    page.locator(".wm-body").evaluate("e=>e.scrollTop=0")
+                    page.locator(".wm-panel").screenshot(path=str(tmp_path / "document-source-trail.png"))
+                    result_row = page.locator(".wi-row").filter(has=page.get_by_text("Calculated result", exact=True))
+                    result_row.scroll_into_view_if_needed()
+                    expect(result_row.locator("dd")).to_be_in_viewport(ratio=1)
+                    expect(result_row.locator("dd")).to_have_text("2023")  # E12 (2022) + 1.
+                    page.locator(".wm-panel").screenshot(path=str(tmp_path / "document-source-result.png"))
+                    before_return = book.request_count
+                    page.get_by_role("button", name="Return to chosen cell", exact=True).click()
+                    expect(page.locator(".wi-evidence dd").first).to_have_text("2025")
+                    assert book.request_count == before_return
+                    assert all(paired and (path == "/version" or path.startswith((
+                        "/api/document-tables?", "/api/inspect-document?", "/api/inspect-source?"))) for path, paired in requests)
+
+                    # Exercise the real content-script timer, not a substituted clock.
+                    document_delay.set()
+                    page.locator(".wi-inspect").click()
+                    expect(page.locator(".wi-inspector")).to_contain_text("Cell read timed out", timeout=35000)
+                    page.locator(".wm-panel").screenshot(path=str(tmp_path / "document-cell-timeout.png"))
+                    assert not document_sent.is_set()
+                    document_released.set()
+                    assert document_sent.wait(10)
+                    document_delay.clear()
+                    page.wait_for_timeout(300)
+                    expect(page.locator(".wi-inspector")).to_contain_text("Cell read timed out")
+                    expect(page.locator(".wi-evidence")).to_have_count(0)
+                    page.locator(".wi-inspect").click()
+                    expect(page.locator(".wi-evidence dd").first).to_have_text("2025")
+                    document_released.clear()
+                    document_sent.clear()
+
+                    # A cancelled reply cannot restore the old cell or cross a section change.
+                    document_delay.set()
+                    page.locator(".wi-inspect").click()
+                    expect(page.locator(".wi-inspect")).to_have_text("Reading cell…")
+                    page.locator(".wi-doc-change").click()
+                    expect(page.locator(".wi-doc-form")).to_be_visible()
+                    document_released.set()
+                    assert document_sent.wait(10)
+                    document_delay.clear()
+                    page.wait_for_timeout(300)
+                    expect(page.locator(".wi-address")).to_have_count(0)
+                    expect(page.locator(".wi-doc-form")).to_be_visible()
+                    document_released.clear()
+                    document_sent.clear()
+                    document_delay.set()
+                    page.get_by_role("combobox", name="Table", exact=True).select_option("demo-report-table")
+                    page.get_by_label("Cell address", exact=True).fill("B2")
+                    page.get_by_label("Cell address", exact=True).press("Enter")
+                    expect(page.locator(".wi-inspect")).to_have_text("Reading cell…")
+                    page.evaluate("() => {history.pushState({}, '', location.href.replace('de11','de13')); document.body.append('Section changed');}")
+                    expect(page.locator(".wi-doc-heading")).to_have_text("Inspect a report table")
+                    document_released.set()
+                    assert document_sent.wait(10)
+                    document_delay.clear()
+                    page.locator(".wi-doc-load").click()
+                    expect(page.locator(".wi-inspector")).to_contain_text("No body tables in this section")
+                    expect(page.locator(".wi-address")).to_have_count(0)
+                    page.locator(".wm-panel").screenshot(path=str(tmp_path / "document-empty.png"))
+                    page.evaluate("() => {history.pushState({}, '', location.href.replace('de13','unknown')); document.body.append('Section changed');}")
+                    page.locator(".wi-doc-load").click()
+                    expect(page.locator(".wi-inspector")).to_contain_text("Could not verify the tables")
+                    page.locator(".wm-panel").screenshot(path=str(tmp_path / "document-unavailable.png"))
+
+                    # Metadata timeout must also reject a late successful catalog.
+                    page.evaluate("() => {history.pushState({}, '', location.href.replace('unknown','de11')); document.body.append('Section changed');}")
+                    document_released.clear()
+                    document_sent.clear()
+                    document_delay.set()
+                    page.locator(".wi-doc-load").click()
+                    expect(page.locator(".wi-inspector")).to_contain_text("Table read timed out", timeout=35000)
+                    page.locator(".wm-panel").screenshot(path=str(tmp_path / "document-table-timeout.png"))
+                    assert not document_sent.is_set()
+                    document_released.set()
+                    assert document_sent.wait(10)
+                    document_delay.clear()
+                    page.wait_for_timeout(300)
+                    expect(page.locator(".wi-inspector")).to_contain_text("Table read timed out")
+                    expect(page.locator(".wi-doc-form")).to_have_count(0)
+                    page.locator(".wi-doc-load").click()
+                    expect(page.get_by_role("combobox", name="Table", exact=True)).to_be_visible()
+                    assert book.events == []
                 requests.clear()
                 page.set_viewport_size({"width": 1280, "height": 900})
                 page.locator(".wc-toggle").click()
@@ -284,6 +451,7 @@ def test_installed_connection(tmp_path, monkeypatch, token):
                 context.close()
     finally:
         released.set()
+        document_released.set()
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)

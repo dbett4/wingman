@@ -35,9 +35,10 @@ return to the review.
    Reads are limited to 100 cells across 10 ranges, never silently sampled.
    The inspector makes no edits, performs no reconciliation, and applies no
    client policy. Changing the cell, sheet, or workbook clears its evidence.
-2. **Scan.** Open Scan and click **Scan** for Statement of activities. The seven findings
-   include three safe fixes, three formula/reference review items, and a zero-display
-   convention review item. The existing source-formula detector flags B7 because
+2. **Scan.** Open Scan and click **Scan** for Statement of activities. The six findings
+   include three safe fixes and three formula/reference review items. C8's zero
+   creates no finding without a governing display convention.
+   The existing source-formula detector flags B7 because
    it is a formula in a range-link source; the fixture establishes no policy that
    makes this wrong. Inspect does not inherit that judgment. These review items
    are heuristics, not proven accounting errors.
@@ -99,16 +100,19 @@ rich-text links, non-table source content, and the full dependency chain are not
 automatically traversed. A source step reads one cell plus up to 100 direct source
 cells across 10 ranges, only on request. The trail stops at 10 steps and detects
 repeat table/revision/cell identities. Historical steps leave native formats,
-range-link lists and named-sheet references uninspected rather than borrow current
-metadata or the origin workbook. Stop waiting, a 30-second deadline, returning,
+range-link lists and unverified workbook locations uninspected rather than borrow
+current metadata. The opened workbook is only a candidate: named-sheet references
+are followed only after its sheet/table membership matches the source revision.
+Stop waiting, a 30-second deadline, returning,
 changing tabs and changing scope invalidate pending source replies; errors retain
 earlier evidence. This does not cancel an in-flight backend read. Source addresses
 are in-panel evidence controls, not cross-sheet navigation controls.
 
-The zero-display finding currently receives a column-majority review target even
-though the fixture does not establish an em-dash convention. This is an evaluation
-candidate, not something to auto-apply; the demo deliberately leaves the real
-detector output visible rather than filtering it to make a cleaner presentation.
+The legacy zero-display detector and its repair kind are disabled in the product,
+not filtered out by the demo. Neighboring formats do not establish a reporting
+convention. `/fix` and `/apply` reject that kind even when writes are enabled;
+the panel no longer offers its column-format action. C8 remains inspectable.
+This does not validate the remaining detectors or their repair safety.
 
 ## Isolation and lifecycle
 
