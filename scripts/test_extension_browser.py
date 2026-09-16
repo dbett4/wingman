@@ -558,6 +558,63 @@ def test_installed_connection(tmp_path, monkeypatch, token):
                     page.locator(".wi-doc-load").click()
                     expect(page.get_by_role("combobox", name="Table", exact=True)).to_be_visible()
                     assert book.events == []
+
+                    # Real queue builder/handler/MV3/render/copy path; synthetic scan
+                    # states distinguish no findings from incomplete evidence.
+                    from test_scan_coverage import mixed_workbook
+                    scan_result = mixed_workbook()
+                    source_patch.setattr(app.wk, "scan_workbook", lambda *_a, **_kw: scan_result)
+                    source_patch.setattr(app.wingman_log, "log_scan", lambda *_a, **_kw: None)
+                    page_url = "https://app.wdesk.com/a/fictional-workspace/spreadsheet/de00/-1/sheet/de02"
+                    page.goto(page_url)
+                    page.locator(".wm-pill").click()
+                    page.locator('[data-tab="workbook"]').click()
+                    page.get_by_role("button", name="All sheets", exact=True).click()
+                    expect(page.locator(".wm-sheet")).to_have_count(4)
+                    expect(page.locator(".wm-body > .wm-coverage strong")).to_have_text("Coverage incomplete")
+                    expect(page.locator(".wm-body > .wm-coverage")).to_contain_text("1 of 5 sheets were not scanned")
+                    assert "clean" not in page.locator(".wm-body").inner_text().lower()
+                    complete_row = page.locator(".wm-sheet-row").filter(has_text="Review notes")
+                    expect(complete_row).to_contain_text("0 findings")
+                    expect(complete_row.locator(".wm-lane")).to_have_count(0)
+                    expect(page.locator(".wm-sheet-row").filter(has_text="Restricted sheet")).to_contain_text("scan failed")
+                    partial_row = page.locator(".wm-sheet-row").filter(has_text="Statement detail")
+                    partial_row.focus()
+                    partial_row.press("Enter")
+                    expect(partial_row).to_have_attribute("aria-expanded", "true")
+                    expect(page.locator(".wm-sheet.open")).to_contain_text("remaining pages were not checked")
+                    for theme, width in [("light", 1280), ("dark", 390)]:
+                        if page.locator("#__wk_wingman__").get_attribute("data-theme") != theme:
+                            page.locator('[title^="Theme:"]').click()
+                        page.set_viewport_size({"width": width, "height": 900})
+                        expect(page.locator(".wm-panel")).to_have_css("background-color",
+                            "rgb(255, 255, 255)" if theme == "light" else "rgb(42, 42, 46)")
+                        page.locator(".wm-body").evaluate("e=>e.scrollTop=0")
+                        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+                        assert page.locator(".wm-body").evaluate("e=>e.scrollWidth<=e.clientWidth")
+                        assert page.locator(".wm-sheet-row").evaluate_all("rows=>rows.every(r=>r.getBoundingClientRect().height>=40)")
+                        page.locator(".wm-panel").screenshot(path=str(tmp_path / f"workbook-coverage-{theme}.png"))
+                    context.grant_permissions(["clipboard-read", "clipboard-write"], origin="https://app.wdesk.com")
+                    copy_button = page.locator(".wm-wbbar button")
+                    copy_button.click()
+                    expect(copy_button).to_have_text("Copied")
+                    report = page.evaluate("navigator.clipboard.readText()")
+                    assert "4 of 5 sheets attempted" in report
+                    assert "1 of 5 sheets were not scanned" in report
+                    assert "## Statement detail — 0 findings (coverage incomplete)" in report
+                    assert "remaining pages were not checked" in report
+                    assert "Content cell read failed or incomplete" in report
+                    assert "## Review notes — 0 findings\n" in report
+                    assert "Generated:" in report and "Scan scope: workbook" in report
+                    # Legacy/empty payloads stay visibly unknown, even with zero items.
+                    source_patch.setattr(app, "_run_workbook_queue", lambda *_a: {
+                        "scope": "workbook", "items": [], "scanned": 3, "issueCount": 0})
+                    page.get_by_role("button", name="All sheets", exact=True).click()
+                    expect(page.locator(".wm-sheet")).to_have_count(0)
+                    expect(page.locator(".wm-body > .wm-coverage")).to_contain_text("Coverage unavailable")
+                    expect(page.get_by_role("button", name="Copy report", exact=True)).to_be_visible()
+                    page.locator(".wm-panel").screenshot(path=str(tmp_path / "workbook-coverage-unknown.png"))
+                    assert book.events == []
                 requests.clear()
                 page.set_viewport_size({"width": 1280, "height": 900})
                 page.locator(".wc-toggle").click()

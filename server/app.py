@@ -247,7 +247,9 @@ def _run_workbook_queue(ss, checks_suite=None):
     for sheet in wb.get("sheets") or []:
         if not sheet.get("error"):
             wingman_log.log_scan(ss, sheet.get("sheetId"), sheet)  # PII-safe; failsafe
-    return _maybe_merge_checks(payload, ss, checks_suite)
+    payload = _maybe_merge_checks(payload, ss, checks_suite)
+    payload["coverage"] = diagnose.scan_coverage(payload)
+    return payload
 
 
 def _attach_formula_fetch(payload, formula_meta):
@@ -346,7 +348,9 @@ def _run_sheet_queue(ss, sh, *, vision=False, cell_images=None, checks_suite=Non
     _attach_type_fetch(payload, type_meta)
     _attach_link_fetch(payload, link_meta)
     wingman_log.log_scan(ss, sh, payload)  # PII-safe aggregate; failsafe
-    return _maybe_merge_checks(payload, ss, checks_suite)
+    payload = _maybe_merge_checks(payload, ss, checks_suite)
+    payload["coverage"] = diagnose.scan_coverage(payload)
+    return payload
 
 
 def _run_review_packet(ss, sh, *, checks_suite=None, label=None, vision=False,

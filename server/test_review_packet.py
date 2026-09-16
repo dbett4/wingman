@@ -135,10 +135,11 @@ class BuildPacketTests(unittest.TestCase):
             for f in bucket:
                 self.assertTrue(f.get("rollback"))
 
-    def test_empty_queue_is_clean(self):
-        clean = rp.build_review_packet({"scope": "sheet", "spreadsheetId": "x", "items": []})
-        self.assertEqual(clean["overall"], "CLEAN")
-        self.assertEqual(clean["summary"]["total"], 0)
+    def test_empty_queue_without_coverage_is_unverified(self):
+        packet = rp.build_review_packet({"scope": "sheet", "spreadsheetId": "x", "items": []})
+        self.assertEqual(packet["overall"], "UNVERIFIED")
+        self.assertFalse(packet["coverage"]["complete"])
+        self.assertEqual(packet["summary"]["total"], 0)
 
     def test_addr_cap_truncates(self):
         many = {"kind": "junk-decimal", "severity": "low", "fixable": True, "fix_lane": "safe-auto",

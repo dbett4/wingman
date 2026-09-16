@@ -286,6 +286,51 @@ def build_sheet_queue(
     }
 
 
+def scan_coverage(scan: dict[str, Any]) -> dict[str, Any]:
+    """Coverage of automatic cell checks, not accounting accuracy or publication proof.
+
+    Findings and coverage are independent: zero findings cannot supply missing evidence.
+    Legacy payloads without an inventory or explicit read metadata remain unverified.
+    """
+    warnings: list[str] = []
+    if scan.get("scope") == "workbook":
+        sheets = scan.get("sheets")
+        count, attempted = scan.get("sheetCount"), scan.get("scanned")
+        if not isinstance(sheets, list) or count is None or attempted is None:
+            warnings.append("Sheet inventory unavailable; workbook coverage is unknown")
+        else:
+            if count > attempted:
+                warnings.append(f"{count - attempted} of {count} sheets were not scanned")
+            elif scan.get("truncatedSheets"):
+                warnings.append("Workbook sheet limit reached; some sheets were not scanned")
+            if len(sheets) != attempted:
+                warnings.append("Coverage records are missing for attempted sheets")
+            for sheet in sheets:
+                label = sheet.get("name") or sheet.get("sheetId") or "Unnamed sheet"
+                warnings.extend(f"{label}: {w}" for w in scan_coverage(sheet)["warnings"])
+    elif scan.get("error"):
+        warnings.append("Sheet scan failed; no complete result is available")
+    else:
+        if scan.get("truncated") is True:
+            warnings.append("sheet scan truncated; remaining pages were not checked")
+        elif scan.get("truncated") is not False:
+            warnings.append("Cell-page coverage unavailable")
+        for key, label in (("formula_fetch", "Formula checks"), ("type_fetch", "Cell-type checks"),
+                           ("link_fetch", "Link checks")):
+            meta = scan.get(key)
+            if not isinstance(meta, dict) or not meta:
+                warnings.append(f"{label}: coverage unavailable")
+                continue
+            reason = meta.get("error") or meta.get("skipped") or meta.get("skip_reason")
+            if (reason or meta.get("enabled") is not True or meta.get("partial") is not False
+                    or meta.get("truncated") or meta.get("applied") is False):
+                warnings.append(f"{label}: {reason or meta.get('reason') or 'incomplete or unavailable'}")
+    checks = scan.get("checks") or {}
+    if checks.get("error"):
+        warnings.append(f"Checks error: {checks['error']}")
+    return {"complete": not warnings, "warnings": warnings}
+
+
 def build_workbook_queue(workbook_scan: dict[str, Any]) -> dict[str, Any]:
     """Flatten a /scan-workbook payload into one prioritized cross-sheet queue."""
     ss = workbook_scan.get("spreadsheetId")
@@ -331,12 +376,16 @@ def build_workbook_queue(workbook_scan: dict[str, Any]) -> dict[str, Any]:
     items.sort(key=lambda x: (-x["priority"], x.get("sheetName") or "", x["kind"], x["signature"]))
     high = sum(1 for i in items if i["severity"] == "high")
     fixable = sum(1 for i in items if i["fixable"])
+    sheets = [{**{k: v for k, v in sheet.items() if k != "groups"},
+               "coverage": scan_coverage(sheet)} for sheet in workbook_scan.get("sheets") or []]
     return {
         "scope": "workbook",
         "spreadsheetId": ss,
         "sheetCount": workbook_scan.get("sheetCount"),
         "scanned": workbook_scan.get("scanned"),
         "truncatedSheets": workbook_scan.get("truncatedSheets"),
+        "sheets": sheets,
+        "coverage": scan_coverage({**workbook_scan, "scope": "workbook"}),
         "issueCount": workbook_scan.get("findingTotal", sum(i["count"] for i in items)),
         "groupCount": len(items),
         "summary": {

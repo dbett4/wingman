@@ -35,6 +35,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+import diagnose
+
 SCHEMA_VERSION = 1
 
 ACCEPT = "ACCEPT"
@@ -190,35 +192,6 @@ def _count_by(findings: list[dict[str, Any]], key: str) -> dict[str, int]:
     return out
 
 
-def _coverage_from_queue(queue: dict[str, Any]) -> dict[str, Any]:
-    """Summarize incomplete scan/enrichment surfaces so packets cannot look fully green.
-
-    This is intentionally conservative: partial sheet scans, skipped formula/type/link enrichment,
-    or enrichment errors become explicit coverage warnings. They do not invent findings, but they
-    prevent a clean-looking packet from being treated as complete proof.
-    """
-    warnings: list[str] = []
-    if queue.get("truncated"):
-        warnings.append("sheet scan truncated; only the scanned page was evaluated")
-    for key, label in (("formula_fetch", "formula enrichment"), ("type_fetch", "cell-type enrichment"), ("link_fetch", "link enrichment")):
-        meta = queue.get(key) or {}
-        if not isinstance(meta, dict) or not meta:
-            continue
-        if meta.get("error"):
-            warnings.append(f"{label} error: {meta.get('error')}")
-        skipped = meta.get("skipped") or meta.get("skip_reason")
-        if skipped:
-            warnings.append(f"{label} skipped: {skipped}")
-        if meta.get("truncated") or meta.get("partial"):
-            warnings.append(f"{label} partial/truncated")
-        if meta.get("applied") is False and not skipped and not meta.get("error"):
-            warnings.append(f"{label} not applied")
-    checks = queue.get("checks") or {}
-    if isinstance(checks, dict) and checks.get("error"):
-        warnings.append(f"checks error: {checks.get('error')}")
-    return {"complete": not warnings, "warnings": warnings}
-
-
 def build_review_packet(
     queue: dict[str, Any],
     *,
@@ -235,7 +208,7 @@ def build_review_packet(
     for f in findings:
         buckets[f["disposition"]].append(f)
 
-    coverage = _coverage_from_queue(queue)
+    coverage = diagnose.scan_coverage(queue)
     overall = "CLEAN"
     for f in findings:
         if _VERDICT_ORDER[f["disposition"]] > _VERDICT_ORDER.get(overall, 0):

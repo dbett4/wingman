@@ -243,12 +243,12 @@ eq("garbage",        classifyAddress("US").status,    "drift-shape");
   };
   const r = buildReport(data);
   eq("report title", /^# Wingman review/.test(r), true);
-  eq("report summary", r.includes("3 findings across 3 sheets · 1 clean"), true);
+  eq("report summary", r.includes("3 findings · 3 sheets attempted"), true);
   eq("section header w/ count", r.includes("## Net Assets — 2 findings"), true);
   eq("fixable tag on safe-auto", r.includes("[fixable]"), true);
   eq("no fixable tag on surfaced", /label hygiene.*\[fixable\]/.test(r), false);
   eq("addrs listed", r.includes("B7, B8"), true);
-  eq("clean sheet omitted", r.includes("## Clean"), false);
+  eq("zero-finding sheet retained", r.includes("## Clean — 0 findings (coverage incomplete)"), true);
   eq("ordered by findings desc", r.indexOf("## Net Assets") < r.indexOf("## TB"), true);
   eq("readiness section present", r.includes("## Connected Reporting Readiness"), true);
   eq("safe-auto next action", r.includes("review/apply 2 safe-auto cell fixes with readback"), true);
@@ -266,11 +266,12 @@ eq("garbage",        classifyAddress("US").status,    "drift-shape");
   eq("readiness counts formula gaps", readyLines.some(function (l) { return l.indexOf("2 formula gaps require") >= 0; }), true);
   eq("readiness surfaces link vocabulary", readyLines.some(function (l) { return l.indexOf("healthy 0, no_dest 1, destination 0, orphaned 1") >= 0; }), true);
   eq("readiness says tieout alone not proof", readyLines.some(function (l) { return l.indexOf("tieout alone is not delivery proof") >= 0; }), true);
-  // empty / all-clean workbook
+  // Empty legacy results lack coverage evidence; never call them clean.
   const clean = buildReport({ findingTotal: 0, scanned: 2, truncatedSheets: false,
     sheets: [{ name: "A", findingCount: 0, error: null, groups: [] }, { name: "B", findingCount: 0, error: null, groups: [] }] });
-  eq("all-clean says so", clean.includes("No issues found."), true);
-  eq("all-clean summary", clean.includes("0 findings across 2 sheets · 2 clean"), true);
+  eq("legacy empty results unverified", clean.includes("Coverage incomplete"), true);
+  eq("legacy no clean assertion", clean.includes("2 clean"), false);
+  eq("legacy summary", clean.includes("0 findings · 2 sheets attempted"), true);
   // a sheet that errored is reported, not dropped
   const withErr = buildReport({ findingTotal: 0, scanned: 1, truncatedSheets: false,
     sheets: [{ name: "Oops", findingCount: 0, error: "HTTP 500", groups: [] }] });
@@ -357,6 +358,31 @@ eq("garbage",        classifyAddress("US").status,    "drift-shape");
   eq("rollup sheet count", r.sheets.length, 2);
   eq("rollup groups on TB", r.sheets.find(function (s) { return s.name === "TB"; }).findingCount, 3);
   eq("rollup scan error", r.sheets.find(function (s) { return s.name === "Locked"; }).error, "HTTP 403");
+  eq("legacy coverage unknown", require("./wingman-core.js").coverageWarnings(r).length, 1);
+  const coverage = { complete: false, warnings: ["1 of 3 sheets were not scanned", "Partial: remaining pages unchecked"] };
+  const complete = { complete: true, warnings: [] };
+  const modern = { issueCount: 0, scanned: 2, sheetCount: 3, truncatedSheets: true, items: [], coverage,
+    sheets: [
+      { sheetId: "zero", name: "No flags", cellCount: 31, truncated: false, coverage: complete },
+      { sheetId: "partial", name: "Partial", cellCount: 200, truncated: true,
+        coverage: { complete: false, warnings: ["remaining pages unchecked"] } },
+    ] };
+  const saved = JSON.stringify(modern);
+  const rollup = queueToWorkbookRollup(modern);
+  eq("zero-finding inventory retained", rollup.sheets.map(s => s.sheetId), ["zero", "partial"]);
+  eq("partial flag retained", rollup.sheets[1].truncated, true);
+  eq("cell count retained", rollup.sheets[1].cellCount, 200);
+  eq("coverage retained", rollup.coverage, coverage);
+  eq("source queue unchanged", JSON.stringify(modern), saved);
+  const report = buildReport(rollup);
+  eq("copied report denominator", report.includes("2 of 3 sheets attempted"), true);
+  eq("copied report omitted sheets", report.includes("1 of 3 sheets were not scanned"), true);
+  eq("copied report zero-finding partial", report.includes("## Partial — 0 findings (coverage incomplete)"), true);
+  eq("copied report complete zero-finding", report.includes("## No flags — 0 findings\n"), true);
+  eq("copied report preserves page limit", report.includes("remaining pages unchecked"), true);
+  eq("copied report not a clean verdict", report.includes("This is not a clean-workbook verdict."), true);
+  eq("complete empty inventory honored", queueToWorkbookRollup({ scanned: 0, sheetCount: 0, items: [], sheets: [], coverage: complete }).scanned, 0);
+  eq("complete automatic checks label", buildReport({ scanned: 0, sheetCount: 0, sheets: [], coverage: complete }).includes("Automatic checks completed"), true);
 })();
 
 // --- vision crop planning ---

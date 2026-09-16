@@ -707,9 +707,9 @@
     ".wm-arrow{color:var(--sep)}.wm-ratio{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}.wm-note{color:var(--muted);font-size:12px;font-style:italic}.wm-done{color:var(--accent);font-weight:500}.wm-err{color:var(--err)}" +
     // workbook sheet-list accordion (own classes so the inner .wm-grp.open selector never bleeds into it)
     ".wm-sheet{border-bottom:1px solid var(--border-soft)}" +
-    ".wm-sheet-row{display:flex;align-items:center;gap:9px;padding:10px 12px;cursor:pointer;transition:background-color .12s ease}.wm-sheet-row:hover{background:var(--row-hover)}" +
+    ".wm-sheet-row{display:flex;flex-wrap:wrap;align-items:center;gap:9px;width:100%;min-height:44px;border:0;background:transparent;color:inherit;font:inherit;text-align:left;padding:10px 12px;cursor:pointer;transition:background-color .12s ease}.wm-sheet-row:hover{background:var(--row-hover)}.wm-sheet-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}" +
     ".wm-sheet-det{display:none;padding:2px 0 8px}.wm-sheet.open .wm-sheet-det{display:block}" +
-    ".wm-sname{font-weight:500}" +
+    ".wm-sname{font-weight:500;min-width:0;overflow-wrap:anywhere}.wm-coverage{padding:10px 12px;border-bottom:1px solid var(--border-soft);font-size:12px;overflow-wrap:anywhere}.wm-coverage strong{display:block;margin-bottom:4px}.wm-coverage p{margin:4px 0;color:var(--muted)}ul.wm-coverage{margin:0;padding-left:30px;border-bottom:0}" +
     ".wm-sdot{width:8px;height:8px;border-radius:999px;flex:none;background:var(--muted)}.wm-sdot.clean{opacity:.35}.wm-sdot.some{background:var(--accent)}.wm-sdot.high{background:var(--warn)}.wm-sdot.err{background:var(--err)}" +
     ".wm-here{font-size:10px;color:var(--accent-text);border:1px solid var(--accent-border);border-radius:999px;padding:0 6px}" +
     ".wm-meta{margin-left:auto;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}" +
@@ -1907,17 +1907,19 @@
 
   function renderWorkbookView(ui, ids, rollup) {
     if (!reviewIsCurrent(ui, ids, "workbook")) return;
-    var withIssues = rollup.sheets.filter(function (s) { return s.findingCount || s.error; }).length;
-    var clean = Math.max(0, (rollup.scanned || 0) - withIssues);
-    updateCtxLine(ui,
-      rollup.findingTotal + " finding" + (rollup.findingTotal === 1 ? "" : "s") +
-      " · " + (rollup.scanned || rollup.sheets.length) + " sheet" + ((rollup.scanned || rollup.sheets.length) === 1 ? "" : "s") +
-      (rollup.scanned ? " · " + clean + " clean" : "") +
-      (rollup.truncatedSheets ? " · capped at " + rollup.scanned : ""),
-      null);
+    updateCtxLine(ui, workbookSummary(rollup), null);
     if (ui.thermo) ui.thermo.replaceChildren();
-    if (!rollup.sheets.length) { stateMsg(ui.body, "No issues found", "This workbook is clean."); return; }
     ui.body.replaceChildren();
+    var warnings = coverageWarnings(rollup);
+    var coverage = el("div", "wm-coverage");
+    coverage.appendChild(el("strong", "", warnings.length ? "Coverage incomplete" : "Automatic checks completed"));
+    var missing = rollup.sheetCount == null ? null : rollup.sheetCount - rollup.scanned;
+    if (missing > 0) coverage.appendChild(el("p", "", missing + " of " + rollup.sheetCount + " sheets were not scanned."));
+    coverage.appendChild(el("p", "", warnings.length ?
+      "Results cover only completed checks. Expand a sheet for limits; resolve missing access or read limits and scan again." :
+      "No findings means no flags in these checks—not proof of accounting accuracy or publication."));
+    if (!rollup.sheets.length && warnings.length) coverage.appendChild(el("p", "", warnings.join(" · ")));
+    ui.body.appendChild(coverage);
     var bar = el("div", "wm-wbbar");
     var rep = el("button", "wm-btn ghost", "Copy report");
     rep.title = "Copy a markdown defect list for this workbook";
@@ -1952,32 +1954,42 @@
 
   function renderSheetList(body, data, ids) {
     body.replaceChildren();
-    // issues first (most findings on top), errors next, clean sheets last
+    // Findings first, then failed/incomplete checks, then sheets with no flags.
     data.sheets.slice().sort(function (a, b) {
-      return (b.findingCount - a.findingCount) || ((b.error ? 1 : 0) - (a.error ? 1 : 0));
+      return (b.findingCount - a.findingCount) || ((b.error ? 1 : 0) - (a.error ? 1 : 0)) ||
+        (Number(!!coverageWarnings(b).length) - Number(!!coverageWarnings(a).length));
     }).forEach(function (s) {
+      var warnings = coverageWarnings(s);
       var isCurrent = s.sheetId === ids.sheetId;
       var wrap = el("div", "wm-sheet");
-      var row = el("div", "wm-sheet-row");
-      var dotCls = s.error ? "err" : (!s.findingCount ? "clean" : (hasHigh(s) ? "high" : "some"));
+      var row = el("button", "wm-sheet-row");
+      row.type = "button";
+      row.setAttribute("aria-expanded", "false");
+      var dotCls = s.error ? "err" : (warnings.length ? "high" : (!s.findingCount ? "clean" : (hasHigh(s) ? "high" : "some")));
       row.appendChild(el("span", "wm-sdot " + dotCls));
       row.appendChild(el("span", "wm-sname", s.name || "(unnamed sheet)"));
       if (isCurrent) row.appendChild(el("span", "wm-here", "open"));
-      if (s.truncated) { var p = el("span", "wm-lane", "partial"); p.title = "large sheet — first page scanned"; row.appendChild(p); }
-      row.appendChild(el("span", "wm-meta", s.error ? "error" : (s.findingCount ? s.findingCount + " issue" + (s.findingCount === 1 ? "" : "s") : "clean")));
+      if (warnings.length && !s.error) row.appendChild(el("span", "wm-lane", "incomplete"));
+      row.appendChild(el("span", "wm-meta", s.error ? "scan failed" : (s.findingCount ? s.findingCount + " finding" + (s.findingCount === 1 ? "" : "s") : "0 findings")));
       wrap.appendChild(row);
       var det = el("div", "wm-sheet-det");
+      if (warnings.length) {
+        var limits = el("ul", "wm-coverage");
+        warnings.forEach(function (w) { limits.appendChild(el("li", "", w)); });
+        det.appendChild(limits);
+      }
       if (s.error) {
         var e = el("div", "wm-err"); e.style.padding = "2px 12px 6px"; e.textContent = "Couldn't scan: " + s.error; det.appendChild(e);
       } else if (!s.findingCount) {
-        var note = el("div", "wm-note"); note.style.padding = "2px 12px 6px"; note.textContent = "No issues found."; det.appendChild(note);
+        var note = el("div", "wm-note"); note.style.padding = "2px 12px 6px"; note.textContent = warnings.length ?
+          "No findings in the completed checks. Unchecked evidence remains." : "No findings in the automatic checks."; det.appendChild(note);
       } else {
         var inner = el("div");
         renderGroups(inner, s.groups, { spreadsheetId: ids.spreadsheetId, sheetId: s.sheetId, isCurrent: isCurrent, name: s.name });
         det.appendChild(inner);
       }
       wrap.appendChild(det);
-      row.onclick = function () { wrap.classList.toggle("open"); };
+      row.onclick = function () { row.setAttribute("aria-expanded", String(wrap.classList.toggle("open"))); };
       body.appendChild(wrap);
     });
   }

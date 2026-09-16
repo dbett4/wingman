@@ -239,6 +239,22 @@ review work. This is a product-level removal, not fixture filtering. The other f
 heuristics, independent labels and held-out accuracy evaluation remain unfinished;
 no precision/recall or general repair-safety claim follows from this change.
 
+The local coverage repair preserves zero-finding sheets, scan failures, page limits
+and formula/type/link read metadata through the workbook queue, panel, copied report
+and review packet. Missing coverage remains unknown; zero findings no longer means
+a clean workbook. Failed or short content reads and failed/capped link reads carry
+explicit limits. Malformed sheet data and incomplete sheet inventories are refused,
+not interpreted as empty results. The sheet-list endpoint remains bounded to its
+first 500 entries; a continuation now produces an explicit inventory error rather
+than an incomplete denominator. Sheet rows are keyboard-expandable, and copied
+reports retain scope, timestamp and limits. Verification: 708 backend tests passed
+with 13 optional vision skips, 397 extension checks and nine worker/setup tests
+passed. The installed MV3/handler browser test passed with fictional mixed-coverage
+scan states, actual keyboard interaction and clipboard readback; corrected light,
+dark, 390px and legacy-unknown views were inspected. This is not live Workiva scan
+acceptance, detector accuracy or G3 completion. No permanent installation or service
+change accompanies this candidate.
+
 - Give each finding its location, observed evidence, reason, coverage limits and
   next action. Separate definite defects, judgment calls and incomplete checks.
 - Start with broken references, observed link problems, label whitespace, year

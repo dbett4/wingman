@@ -350,13 +350,16 @@ def link_fetch_enabled():
     return str(os.environ.get("WINGMAN_LINK_FETCH", "")).strip().lower() not in _LINK_OFF
 
 
-def fetch_range_links(table_id, token, ctx, *, api_version="2026-01-01", max_pages=50):
+def fetch_range_links(table_id, token, ctx, *, api_version="2026-01-01", max_pages=50, meta=None):
     """GET /content/tables/{tid}/rangeLinks → normalized [{id, type, revision, table, range}].
 
     `range` is {startRow, stopRow, startColumn, stopColumn} pulled from the entry's `source` or
     `destination` block (verified live: source entries carry `source.range`). Pages `@nextLink`.
-    Fail-open: returns [] on any error — link awareness never breaks a scan (read-only enrichment)."""
+    Retains observed links on error; optional meta records incomplete coverage."""
+    meta = meta if meta is not None else {}
+    meta.update(enabled=True, partial=False)
     if not table_id:
+        meta.update(partial=True, reason="No content table id — link read skipped")
         return []
     out = []
     path = f"/content/tables/{table_id}/rangeLinks"
@@ -366,10 +369,15 @@ def fetch_range_links(table_id, token, ctx, *, api_version="2026-01-01", max_pag
             raw = (_get(path, token, ctx, version=api_version) if path.startswith("/")
                    else _get_url(path, token, ctx, version=api_version))
         except Exception:
+            meta.update(partial=True, reason="Link read failed; remaining links were not checked")
             break
-        data = raw.get("data", raw if isinstance(raw, list) else []) if isinstance(raw, (dict, list)) else []
+        data = raw.get("data") if isinstance(raw, dict) else raw
+        if not isinstance(data, list):
+            meta.update(partial=True, reason="Link response unavailable or malformed")
+            break
         for d in data:
             if not isinstance(d, dict):
+                meta.update(partial=True, reason="Some link records were malformed")
                 continue
             block = d.get("source") or d.get("destination") or {}
             rng = block.get("range") if isinstance(block, dict) else None
@@ -382,6 +390,8 @@ def fetch_range_links(table_id, token, ctx, *, api_version="2026-01-01", max_pag
             })
         path = raw.get("@nextLink") if isinstance(raw, dict) else None
         pages += 1
+    if path and not meta.get("partial"):
+        meta.update(partial=True, reason="Link page limit reached; remaining links were not checked")
     return out
 
 
@@ -476,8 +486,18 @@ def fetch_content_cell_rows(cells, table_id, token, ctx, *, max_cells=None, api_
         raw = _get(path, token, ctx, version=api_version)
     except Exception:
         return None
-    rows = raw.get("data", [])
-    return rows if isinstance(rows, list) else None
+    rows = raw.get("data") if isinstance(raw, dict) else None
+    if not isinstance(rows, list):
+        return None
+    # A successful HTTP response is not proof that every requested cell was returned.
+    for r, c in coords:
+        ri, ci = r - min_r, c - min_c
+        if ri >= len(rows) or not isinstance(rows[ri], dict):
+            return None
+        values = rows[ri].get("cells")
+        if not isinstance(values, list) or ci >= len(values) or not isinstance(values[ci], dict):
+            return None
+    return rows
 
 
 # ---- normalization: sheetdata raw -> list of detector cell dicts ----
@@ -578,6 +598,9 @@ def scan_sheet(spreadsheet_id, sheet_id, token=None, ctx=None, max_pages=MAX_SCA
     token = token or get_token(ctx)  # reuse the caller's cached token (service) or mint one (CLI)
     cells, last = [], None
     for raw in iter_sheetdata(spreadsheet_id, sheet_id, token, ctx, max_pages=max_pages):
+        data = raw.get("data", raw)
+        if not isinstance(data, dict) or not isinstance(data.get("cells"), list):
+            raise ValueError("Sheet cell response unavailable or malformed")
         cells.extend(normalize_sheetdata(raw))
         last = raw
     formula_meta = None
@@ -616,6 +639,12 @@ def scan_sheet(spreadsheet_id, sheet_id, token=None, ctx=None, max_pages=MAX_SCA
             enriched_count=enriched_t,
             table_id_present=True,
         )
+        for enabled, meta in ((ff_on, formula_meta), (tf_on, type_meta)):
+            if enabled and cells and rows is None:
+                meta.update(partial=True, reason="Content cell read failed or incomplete")
+            elif enabled and len(cells) > eff_cap:
+                meta.update(partial=True, cap=eff_cap,
+                            reason=f"Content cell read capped at {eff_cap} of {len(cells)} cells")
     else:
         formula_meta = build_formula_fetch_meta(
             enabled=ff_on,
@@ -639,30 +668,39 @@ def scan_sheet(spreadsheet_id, sheet_id, token=None, ctx=None, max_pages=MAX_SCA
         cells_by_addr = {c["addr"]: c for c in cells}
         findings, vision_meta = apply_vision_layer(findings, cell_images, cells_by_addr)
     truncated = bool(last and last.get("@nextLink"))  # stopped at the cap with more pages left
-    link_meta = None
+    link_meta = {"enabled": link_fetch_enabled(), "partial": True,
+                 "reason": "Link checks disabled" if not link_fetch_enabled() else "No content table id — link read skipped"}
     if table_id and link_fetch_enabled():
         import link_lane
-        links = fetch_range_links(table_id, token, ctx)
+        fetch_meta = {}
+        links = fetch_range_links(table_id, token, ctx, meta=fetch_meta)
         link_findings, link_meta = link_lane.analyze_links(cells, links, truncated=truncated)
+        link_meta.update(fetch_meta)
         findings = list(findings) + link_findings
     return cells, findings, truncated, vision_meta, formula_meta, type_meta, link_meta
+
+
+def _sheet_inventory(spreadsheet_id, token, ctx):
+    raw = _get(f"/spreadsheets/{spreadsheet_id}/sheets?$maxperpage=500", token, ctx, version="2026-01-01")
+    if isinstance(raw, dict) and raw.get("@nextLink"):
+        raise ValueError("Sheet inventory incomplete — sheet listing limit reached")
+    rows = raw.get("data") if isinstance(raw, dict) else raw
+    if not isinstance(rows, list) or any(not isinstance(s, dict) or not s.get("id") for s in rows):
+        raise ValueError("Sheet inventory unavailable or malformed")
+    return rows
 
 
 def list_sheets(spreadsheet_id, token, ctx):
     """[{id, name}] for every sheet in the workbook, in workbook order. Uses the CONTENT sheets
     list (X-Version header) — the same endpoint that resolves table ids; platform/v1 does not
     return sheet names."""
-    raw = _get(f"/spreadsheets/{spreadsheet_id}/sheets?$maxperpage=500", token, ctx, version="2026-01-01")
-    lst = raw.get("data", raw if isinstance(raw, list) else [])
-    return [{"id": s.get("id"), "name": s.get("name")} for s in lst if s.get("id")]
+    return [{"id": s["id"], "name": s.get("name")} for s in _sheet_inventory(spreadsheet_id, token, ctx)]
 
 
 def _sheet_table_ids(spreadsheet_id, token, ctx):
     """Map sheet id -> content table id (opaque token)."""
-    raw = _get(f"/spreadsheets/{spreadsheet_id}/sheets?$maxperpage=500", token, ctx, version="2026-01-01")
-    lst = raw.get("data", raw if isinstance(raw, list) else [])
     out = {}
-    for s in lst:
+    for s in _sheet_inventory(spreadsheet_id, token, ctx):
         sid = s.get("id")
         tbl = (s.get("table") or {}).get("table")
         if sid and tbl:
@@ -693,10 +731,11 @@ def scan_workbook(spreadsheet_id, token=None, ctx=None, max_sheets=60):
         entry = {"sheetId": sid, "name": name, "cellCount": 0, "truncated": False,
                  "findingCount": 0, "groups": [], "error": None}
         try:
-            cells, findings, truncated, _vm, _fm, _tm, _lm = scan_sheet(
+            cells, findings, truncated, vm, fm, tm, lm = scan_sheet(
                 spreadsheet_id, sid, token, ctx, table_id=table_ids.get(sid))
             entry["cellCount"] = len(cells)
             entry["truncated"] = truncated
+            entry.update(vision=vm, formula_fetch=fm, type_fetch=tm, link_fetch=lm)
             entry["groups"] = group_findings(findings, {c["addr"]: c for c in cells})
             format_lane.attach_gated_format_targets(entry["groups"], cells)
             # Drop no-evidence format-consistency noise, then roll counts up from the SURVIVING

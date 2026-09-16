@@ -217,24 +217,39 @@
     return parts.join(" · ");
   }
 
+  function coverageWarnings(data) {
+    var coverage = data && data.coverage;
+    if (coverage && coverage.warnings && coverage.warnings.length) return coverage.warnings.slice();
+    if (coverage && coverage.complete === true) return [];
+    return ["Coverage unavailable — rerun with an updated service before relying on this result."];
+  }
+
+  function workbookSummary(data) {
+    var attempted = data.scanned == null ? data.sheets.length : data.scanned;
+    return (data.findingTotal || 0) + " finding" + (data.findingTotal === 1 ? "" : "s") +
+      " · " + attempted + (data.sheetCount == null ? " sheets attempted" : " of " + data.sheetCount + " sheets attempted") +
+      (data.truncatedSheets ? " · sheet limit reached" : "");
+  }
+
   function buildReport(data) {
     if (!data || !data.sheets) return "";
     var lines = ["# Wingman review", ""];
     var meta = reportMetaLines(data);
     if (meta.length) lines = lines.concat(meta, [""]);
-    var withIssues = data.sheets.filter(function (s) { return s.findingCount || s.error; }).length;
-    lines.push((data.findingTotal || 0) + " finding" + (data.findingTotal === 1 ? "" : "s") +
-      " across " + data.scanned + " sheet" + (data.scanned === 1 ? "" : "s") +
-      " · " + (data.scanned - withIssues) + " clean" +
-      (data.truncatedSheets ? " · capped at " + data.scanned + " sheets" : ""));
+    lines.push(workbookSummary(data));
+    var warnings = coverageWarnings(data);
+    lines.push("", warnings.length ? "Coverage incomplete" : "Automatic checks completed",
+      "Coverage describes automatic cell checks, not accounting accuracy, visual review or publication proof.");
+    warnings.forEach(function (w) { lines.push("- " + w); });
     Array.prototype.push.apply(lines, connectedReportingReadiness(data));
-    data.sheets.slice().filter(function (s) { return s.findingCount || s.error; })
+    data.sheets.slice()
       .sort(function (a, b) { return (b.findingCount || 0) - (a.findingCount || 0); })
       .forEach(function (s) {
         lines.push("", "## " + (s.name || "(unnamed sheet)") + " — " +
           (s.error ? "scan error" : (s.findingCount + " finding" + (s.findingCount === 1 ? "" : "s"))) +
-          (s.truncated ? " (partial)" : ""));
+          (coverageWarnings(s).length ? " (coverage incomplete)" : ""));
         if (s.error) { lines.push("- ERROR: " + s.error); return; }
+        coverageWarnings(s).forEach(function (w) { lines.push("- " + w); });
         (s.groups || []).slice().sort(function (a, b) { return _sevRank(b.severity) - _sevRank(a.severity); })
           .forEach(function (g) {
             var shown = g.addrs.slice(0, 40).join(", ") + (g.addrs.length > 40 ? " +" + (g.addrs.length - 40) + " more" : "");
@@ -244,7 +259,7 @@
               (g.fix_lane === "safe-auto" ? " [fixable]" : "") + " — " + shown);
           });
       });
-    if (!withIssues) lines.push("", "No issues found.");
+    if (!data.findingTotal) lines.push("", "No findings in the completed checks. This is not a clean-workbook verdict.");
     return lines.join("\n");
   }
 
@@ -308,13 +323,16 @@
   // buildReport + renderSheetList (items carry sheetId/sheetName on each row).
   function queueToWorkbookRollup(q) {
     if (!q || !q.items) return { findingTotal: 0, scanned: 0, truncatedSheets: false, sheets: [] };
-    var sheetMap = {};
+    var sheetMap = Object.create(null);
+    (q.sheets || []).forEach(function (sheet) {
+      sheetMap[sheet.sheetId] = Object.assign({}, sheet, { groups: [], findingCount: 0 });
+    });
     q.items.forEach(function (item) {
       var sid = item.sheetId || "";
       if (!sheetMap[sid]) {
         sheetMap[sid] = {
           sheetId: sid, name: item.sheetName || "(unnamed sheet)",
-          groups: [], findingCount: 0, truncated: false, error: null,
+          groups: [], findingCount: 0, error: null,
         };
       }
       var s = sheetMap[sid];
@@ -323,9 +341,12 @@
     });
     var sheets = Object.keys(sheetMap).map(function (k) { return sheetMap[k]; });
     return {
+      scope: "workbook",
       findingTotal: q.issueCount || 0,
-      scanned: q.scanned || sheets.length,
+      scanned: q.scanned == null ? sheets.length : q.scanned,
+      sheetCount: q.sheetCount,
       truncatedSheets: !!q.truncatedSheets,
+      coverage: q.coverage,
       sheets: sheets,
     };
   }
@@ -942,6 +963,7 @@
 
   var api = {
     classifyAddress: classifyAddress, DriftGuard: DriftGuard, buildReport: buildReport,
+    coverageWarnings: coverageWarnings, workbookSummary: workbookSummary,
     connectedReportingReadiness: connectedReportingReadiness,
     FORMULA_GAP_KINDS: FORMULA_GAP_KINDS, isFormulaGapKind: isFormulaGapKind,
     tallyGroups: tallyGroups, triageText: triageText, filterGroupsByLane: filterGroupsByLane,
