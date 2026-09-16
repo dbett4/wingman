@@ -98,6 +98,32 @@ function eq(label, got, want) {
     eq("document evidence rejects changed " + field, wi.matches(chosen, { ...chosen, [field]: "another" }), false);
   }
   eq("spreadsheet evidence cannot match document choice", wi.matches(chosen, target), false);
+
+  const located = { target: source, contentRevision: "rev-3", location: {
+    status: "observed", spreadsheetId: "book-source", sheetId: "sheet-source", revision: "rev-3",
+  } };
+  const nativeUrl = "https://app.wdesk.com/a/workspace-a/spreadsheet/book-source/-1/sheet/sheet-source";
+  eq("verified source opens its sheet, not the origin sheet", wi.sourceSheetUrl(href, located), nativeUrl);
+  eq("source link works from a document but discards query and fragment", wi.sourceSheetUrl(docUrl + "?private=1#fragment", located), nativeUrl);
+  eq("source link retains regional origin", wi.sourceSheetUrl(href.replace("app.wdesk.com", "eu.wdesk.com"), located),
+    nativeUrl.replace("app.wdesk.com", "eu.wdesk.com"));
+  for (const invalid of [null, {}, { ...located, location: null },
+    { ...located, target: null }, { ...located, target: { ...source, revision: "" } },
+    { ...located, contentRevision: "newer" }]) {
+    eq("no source link without revision-bound evidence " + JSON.stringify(invalid), wi.sourceSheetUrl(href, invalid), null);
+  }
+  for (const changes of [{ status: "unavailable" }, { status: "not_inspected" }, { revision: "newer" },
+    { spreadsheetId: "" }, { sheetId: null }, { sheetId: "../other" }, { sheetId: "sheet?extra=1" },
+    { spreadsheetId: "https://evil.invalid" }, { spreadsheetId: "a".repeat(129) }, { sheetId: "%2fescape" }]) {
+    eq("no source link for untrusted location " + JSON.stringify(changes),
+      wi.sourceSheetUrl(href, { ...located, location: { ...located.location, ...changes } }), null);
+  }
+  for (const invalid of ["bad URL", href.replace("https:", "http:"), href.replace("wdesk.com", "wdesk.com.evil.invalid"),
+    href.replace("app.wdesk.com", "user:pass@app.wdesk.com"), href.replace("app.wdesk.com", "app.wdesk.com:8443"),
+    href.replace("/a/workspace-a", ""), href.replace("/sheet/", "/42/sheet/"),
+    "http://localhost/#/spreadsheet/book-b/sheet/sheet-c"]) {
+    eq("no native link from unsupported page " + invalid, wi.sourceSheetUrl(invalid, located), null);
+  }
 })();
 
 // --- connection evidence is not Workiva access ---

@@ -88,6 +88,7 @@ def test_installed_connection(tmp_path, monkeypatch, token):
             )
             try:
                 page_url = "https://app.wdesk.com/a/fictional-workspace/spreadsheet/abc123/-1/sheet/def456"
+                source_page_url = "https://app.wdesk.com/a/fictional-workspace/spreadsheet/de00/-1/sheet/de02"
 
                 def route_request(route):
                     if route.request.url == page_url:
@@ -97,6 +98,10 @@ def test_installed_connection(tmp_path, monkeypatch, token):
                             <p>Selected cell:</p><div class="dt-formula-cell-indicator">B2</div>
                             <table border="1" cellpadding="16"><tr><th>Label</th><th>Fiscal year</th></tr>
                             <tr><td>Report period</td><td>2025</td></tr></table></body></html>""")
+                    elif route.request.url == source_page_url:
+                        route.fulfill(content_type="text/html", body="""<!doctype html><html lang="en">
+                            <title>Fictional source sheet</title><h1>Review notes</h1>
+                            <p>Fictional current sheet. Not the recorded source revision.</p></html>""")
                     elif route.request.url.startswith(("http://127.0.0.1:8770/", "chrome-extension://")):
                         route.continue_()
                     else:
@@ -263,6 +268,7 @@ def test_installed_connection(tmp_path, monkeypatch, token):
                     expect(page.locator(".wi-evidence dd").first).to_have_text("=E12+1")
                     expect(page.locator(".wi-origin")).to_contain_text("B2: 2025")
                     expect(page.locator(".wi-trail")).to_have_text("Selected B2→D6→E11")
+                    expect(page.locator(".wi-open-source")).to_have_count(0)  # Workbook membership is unverified.
                     expect(page.locator(".dt-formula-cell-indicator")).to_have_text("B2")
                     page.locator(".wm-body").evaluate("e=>e.scrollTop=0")
                     capture("installed-source-trail")
@@ -311,6 +317,55 @@ def test_installed_connection(tmp_path, monkeypatch, token):
                     page.locator(".wi-inspect").click()
                     expect(page.locator(".wi-address")).to_have_text("B7")
                     assert book.request_count == before_return and book.events == []
+
+                    # Cross-sheet navigation must use verified source metadata, not
+                    # the origin sheet. The native page is still fictional here.
+                    original_formula = book.sheet("de01")["formulas"]["B7"]
+                    book.sheet("de01")["formulas"]["B7"] = "='Review notes'!B2"
+                    page.locator(".wi-read-sources").click()
+                    page.locator(".wi-follow").first.click()
+                    expect(page.locator(".wi-address")).to_have_text("B2")
+                    expect(page.locator(".wi-evidence dd").first).to_have_text("2025")
+                    source_link = page.get_by_role("link", name="Open source sheet ↗", exact=True)
+                    expect(source_link).to_have_attribute("href", source_page_url)
+                    expect(source_link).to_have_attribute("rel", "noopener noreferrer")
+                    expect(page.locator("#wi-open-source-note")).to_contain_text("Values may differ from this saved revision")
+                    for theme, width in [("light", 1280), ("dark", 390)]:
+                        # Toggle via the shipped control; the attribute is not patched.
+                        if page.locator("#__wk_wingman__").get_attribute("data-theme") != theme:
+                            page.locator('[title^="Theme:"]').click()
+                        page.set_viewport_size({"width": width, "height": 900})
+                        page.locator(".wm-body").evaluate("e=>e.scrollTop=0")
+                        expect(page.locator(".wi-evidence dd").nth(1)).to_be_in_viewport(ratio=1)
+                        assert source_link.bounding_box()["height"] >= 40
+                        assert page.locator(".wi-inspector").evaluate("e=>e.scrollWidth<=e.clientWidth")
+                        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+                        page.locator(".wm-panel").screenshot(path=str(tmp_path / f"open-source-{theme}.png"))
+                        page.get_by_role("button", name="Return to selected cell", exact=True).focus()
+                        page.keyboard.press("Tab")
+                        expect(source_link).to_be_focused()
+                        assert source_link.evaluate("e=>e.matches(':focus-visible') && getComputedStyle(e).outlineStyle==='solid'")
+                        page.locator("#wi-open-source-note").scroll_into_view_if_needed()
+                        page.locator(".wm-panel").screenshot(path=str(tmp_path / f"open-source-{theme}-evidence.png"))
+                    before_open = book.request_count
+                    with context.expect_page() as new_tab:
+                        source_link.press("Enter")
+                    source_page = new_tab.value
+                    source_page.wait_for_load_state()
+                    assert source_page.url == source_page_url
+                    expect(source_page.get_by_role("heading", name="Review notes", exact=True)).to_be_visible()
+                    assert source_page.evaluate("window.opener === null")
+                    source_page.close()
+                    page.bring_to_front()
+                    assert page.url == page_url
+                    expect(page.locator(".wi-trail")).to_have_text("Selected B7→B2")
+                    expect(page.locator(".wi-origin")).to_contain_text("='Review notes'!B2")
+                    page.get_by_role("button", name="Return to selected cell", exact=True).click()
+                    expect(page.locator(".wi-address")).to_have_text("B7")
+                    expect(page.locator(".wi-open-source")).to_have_count(0)
+                    assert book.request_count == before_open and book.events == []
+                    book.sheet("de01")["formulas"]["B7"] = original_formula
+                    page.set_viewport_size({"width": 1280, "height": 900})
 
                     # Document choice uses native-shaped URLs but fictional data.
                     # No cell address is supplied by the host page in this flow.

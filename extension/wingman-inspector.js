@@ -31,6 +31,22 @@
   function matchesSource(target, reply) {
     return !!reply && ["tableId", "revision", "addr"].every(function (k) { return target[k] === reply[k]; });
   }
+  function sourceSheetUrl(href, data) {
+    var url;
+    try { url = new URL(href); } catch (_) { return null; }
+    var context = selection(href, "A1"), page = context.target || context.document;
+    var location = data && data.location, target = data && data.target;
+    if (!page || !page.workspaceId || url.username || url.password || url.port ||
+        !location || location.status !== "observed" || !target || !target.revision ||
+        location.revision !== target.revision || data.contentRevision !== target.revision ||
+        ![location.spreadsheetId, location.sheetId].every(function (id) {
+          return typeof id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(id);
+        })) return null;
+    // Open today's native sheet explicitly; never imply it is the saved revision
+    // or that a URL selects the historical cell. Keep the evidence tab untouched.
+    return url.origin + "/a/" + page.workspaceId + "/spreadsheet/" + location.spreadsheetId +
+      "/-1/sheet/" + location.sheetId;
+  }
   function traceBlock(origin, trail, target) {
     var seen = [{ tableId: origin.tableId, revision: origin.contentRevision, addr: origin.target.addr }]
       .concat(trail.map(function (data) { return data.target; }));
@@ -203,6 +219,19 @@
         row(evidence, "Calculated result", valueText(data.calculated), true);
         row(evidence, "Native format", formatText(data.nativeFormat));
         page.appendChild(evidence);
+        var sourceUrl = tracing && sourceSheetUrl(root.location.href, data);
+        if (sourceUrl) {
+          var openSheet = el("a", "wm-btn wi-open-source", "Open source sheet ↗");
+          openSheet.href = sourceUrl;
+          openSheet.target = "_blank";
+          openSheet.rel = "noopener noreferrer";
+          openSheet.setAttribute("aria-describedby", "wi-open-source-note");
+          page.appendChild(openSheet);
+          var openNote = el("p", "wi-description", "Opens today's sheet in a new tab, not cell " + target.addr +
+            ". Values may differ from this saved revision. Switch back to this tab for the trail.");
+          openNote.id = "wi-open-source-note";
+          page.appendChild(openNote);
+        }
         var explanations = {
           formula: "",
           number: "This cell stores a number. Without its source policy, Wingman cannot say whether it should be a formula or an approved frozen value.",
@@ -411,6 +440,7 @@
 
   var styles = ".wi-inspector{padding:16px;overflow-wrap:anywhere}.wi-inspector *{box-sizing:border-box}" +
     ".wi-trail{display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-top:10px}.wi-trail-step{min-height:40px;display:inline-flex;align-items:center;padding:6px 8px;border:1px solid var(--border-soft);border-radius:4px;background:transparent;color:var(--accent-text);font:inherit}.wi-trail-step[aria-current]{color:var(--muted)}button.wi-trail-step{cursor:pointer}.wi-trail-arrow{color:var(--muted)}.wi-origin{font-size:12px;line-height:1.5;border-left:2px solid var(--border-soft);padding-left:10px;color:var(--muted)}.wi-follow{display:block;min-height:40px;margin-top:8px;width:100%;white-space:normal}.wi-follow:disabled{opacity:.65;cursor:default}.wi-trace-cancel{min-height:40px;width:100%}.wi-trail-step:focus-visible{outline:2px solid var(--accent);outline-offset:2px}" +
+    ".wi-open-source{display:flex;align-items:center;justify-content:center;min-height:40px;margin-top:8px;text-decoration:none;white-space:normal}.wi-open-source:focus-visible{outline:2px solid var(--accent);outline-offset:2px}" +
     ".wi-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.wi-eyebrow{font-size:10px;letter-spacing:.09em;color:var(--muted);font-weight:600}.wi-readonly{font-size:11px;color:var(--muted)}" +
     ".wi-address{font-size:32px;line-height:1.15;font-weight:500;letter-spacing:-.04em;margin:10px 0 4px}.wi-sheet{margin:0 0 14px;color:var(--muted)}" +
     ".wi-inspect{min-height:40px;width:100%}.wi-inspect:disabled{opacity:.65;cursor:wait}.wi-description{color:var(--muted);font-size:12px;line-height:1.55;margin:10px 0 12px}" +
@@ -423,7 +453,7 @@
     ".wm-panel.wi-mode .wm-tab-actions,.wm-panel.wi-mode .wm-ctx,.wm-panel.wi-mode .wm-operator-warnings,.wm-panel.wi-mode .wm-thermo,.wm-panel.wi-mode .wm-preset{display:none!important}" +
     ".wm-panel.wi-mode{max-width:calc(100vw - 28px)}.wm-panel.wi-mode .wm-tab{min-height:40px}.wm-panel.wi-mode .wm-head .wm-x{min-height:32px;min-width:32px}.wm-panel.wi-mode .wm-reset-size,.wm-panel.wi-mode .wm-wide-toggle{display:none}";
   var api = { selection: selection, key: key, matches: matches, matchesSource: matchesSource, traceBlock: traceBlock,
-    valueText: valueText, formatText: formatText, render: render, styles: styles };
+    sourceSheetUrl: sourceSheetUrl, valueText: valueText, formatText: formatText, render: render, styles: styles };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.WingmanInspector = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

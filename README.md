@@ -75,7 +75,14 @@ scope changes reject late replies. Historical source views do not borrow today's
 native format or range-link lists, or infer a source workbook from the origin.
 Named-sheet references at those steps remain unresolved without a verified workbook
 identity. Inline rich-text links, non-table sources and automatic full-chain
-expansion are not supported. In-panel tracing is not cross-sheet or document navigation.
+expansion are not supported.
+
+When source-sheet membership is verified at the recorded revision, **Open source
+sheet** opens that sheet's current Workiva view in a separate tab. The evidence
+and return trail stay in the original tab. This does not select the source cell
+or open its historical revision; today's values may differ. Unknown or mismatched
+locations offer no link. The installed-extension regression tests keyboard opening
+and return using fictional pages; live cross-sheet acceptance remains open.
 
 Engagement policy, document comments, and downstream report checks are not
 connected. Page IDs do not prove client, fiscal year, or working-copy

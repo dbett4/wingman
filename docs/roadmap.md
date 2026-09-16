@@ -108,6 +108,17 @@ in-panel evidence navigation, not movement across Workiva sheets or documents.
 General cross-workbook resolution, cross-sheet navigation, the linked document-table
 in-page journey and new-reviewer acceptance remain open.
 
+The next local candidate adds **Open source sheet** for a location whose sheet/table
+membership matches the recorded revision. It opens today's sheet in a separate tab,
+not the historical cell; values and the return trail remain in the original tab.
+The actual installed MV3 test exercised a cross-sheet formula reference, keyboard
+opening, no opener access, and return without new API reads or writes against
+fictional pages. Missing/mismatched locations have no link. Light/dark and 390px
+renders were inspected; source values precede navigation and keyboard focus is visible.
+This candidate is not deployed. The Mac Workiva tab remains signed out; the shared
+VPS browser lease was unavailable, so no new native-sheet or live in-page proof
+was obtained. Cell selection, general workbook discovery and live acceptance remain open.
+
 The September 16 private activation used the owner-selected older RCTC sandbox pair,
 not an audit client. The installed Mac broker read the Statement of Activities table
 at its recorded revision: report D12 linked to companion spreadsheet J18, whose
